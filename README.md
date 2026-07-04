@@ -1,5 +1,7 @@
 # onvif-proxy
 
+**English** | [简体中文](README.zh-CN.md)
+
 An **RTSP → ONVIF virtual camera proxy** written in Go. It wraps any existing RTSP stream (IP cameras, NVR channels, Raspberry Pi, ffmpeg pushes, …) into a spec-compliant ONVIF Profile S virtual device that can be discovered and adopted by Unifi Protect, Synology Surveillance Station, Frigate, and other ONVIF clients.
 
 > **Why another one?** The existing [daniela-hase/onvif-server](https://github.com/daniela-hase/onvif-server) and its fork [p10tyr/rtsp-to-onvif](https://github.com/p10tyr/rtsp-to-onvif) are built on the Node.js `soap` library + WSDL. Any method not explicitly registered throws a malformed bare HTTP 500 (in practice `GetCapabilities`, `GetScopes`, and `GetNetworkInterfaces` all 500), which makes some clients mark the device as incompatible. This project is a from-scratch Go rewrite that implements the full mandatory method set with standard fault semantics, plus a built-in web UI for configuration and testing.
