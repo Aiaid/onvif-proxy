@@ -22,7 +22,7 @@ Web 服务默认监听 `:8080`,提供 REST API 与内嵌单页 UI。可选 HTTP 
 | 方法/路径 | 说明 |
 |-----------|------|
 | `POST /api/test/rtsp` | Body `{"url": "rtsp://..."}`。原生 RTSP 探测(OPTIONS + DESCRIBE + Digest/Basic 认证),返回:`{"ok":true, "status":200, "auth":"digest", "server":"...", "tracks":[{"type":"video","codec":"H264","fmtp":"..."}], "latency_ms": 43}`。错误分类:`dial_timeout` / `auth_failed` / `not_found` / `no_video_track` / `protocol_error` |
-| `POST /api/test/streaminfo` | Body `{"url": "rtsp://..."}`。ffprobe 探测首个视频流,返回 `{"codec":"h264","width":1920,"height":1080,"fps":25}`,供新增设备表单回填宽/高/帧率。ffmpeg 不可用返回 501 |
+| `POST /api/test/streaminfo` | Body `{"url": "rtsp://..."}`。ffprobe 探测首个视频流,返回 `{"codec":"h264","width":1920,"height":1080,"fps":25,"bitrate":2048}`,供新增设备表单回填。`bitrate`(kbps):源声明了就用声明值,否则 ffmpeg 拉流 3 秒按实际字节实测;测不出为 0(表单保留手填值)。ffmpeg 不可用返回 501 |
 | `GET /api/test/snapshot?device=<uuid>&stream=<name>` | 调 ffmpeg 从指定流抓一帧(`stream` 省略取主流),返回 `image/jpeg`。失败返回 JSON 错误(含 ffmpeg stderr 摘要) |
 | `GET /api/preview?device=<uuid>&stream=<name>` | **MJPEG 实时预览**:ffmpeg 拉指定流 → `-f mpjpeg`(缩至 640 宽、5fps、静音)→ `multipart/x-mixed-replace` 推给浏览器,`<img>` 直接播。客户端断开即杀 ffmpeg;每设备并发预览数上限 2 |
 | `POST /api/test/onvif?device=<uuid>` | **ONVIF 自检**:服务端以 ONVIF 客户端身份调用自己的 SOAP 端点,逐方法返回 `{method, http_status, soap_fault, pass}`。覆盖方法:GetSystemDateAndTime、GetCapabilities、GetServices、GetScopes、GetNetworkInterfaces、GetDeviceInformation、GetProfiles、GetStreamUri、GetSnapshotUri + 一个故意不存在的方法(验证 Fault 规范性) |
