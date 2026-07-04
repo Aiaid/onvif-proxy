@@ -193,7 +193,7 @@ REST 路由与语义见 docs/04(`/api/config`、`/api/devices`、`/api/test/rtsp
 
 - 探测直接调 `rtsp.Probe`;预览直接调 `mediautil.ServeMJPEG`(每设备并发上限 2,web 层管信号量);快照走 `Backend.Snapshot`(缓存/透传由 main 组合);
 - **ONVIF 自检**在 web 包内实现:对 `dev.Ports.SOAP` 逐方法发手写 SOAP envelope(WSSE 按 dev.Auth 生成),按 docs/04 的方法清单返回 `[{method, http_status, soap_fault, pass}]`;最后加一个不存在的方法,pass 条件 = 返回体是合法 Fault XML 且 subcode 为 ActionNotSupported;
-- 静态 UI:`static/index.html` 单文件(原生 JS),`go:embed` 进二进制;
+- 静态 UI:Preact+TSX 源码在 `internal/web/ui/`,esbuild 打包为 `static/dist/{app.js,app.css}`(提交进仓库),`index.html` 薄壳,`go:embed all:static` 进二进制(含 `dist/`);`GET /dist/*` 由 `http.FileServerFS` 从嵌入 FS 服务;`PUT /api/devices/{uuid}` 编辑设备(见 docs/04);`GET /api/devices` DTO 为编辑预填补充了 `rtsp_port/auth_user` 与每流源参数;
 - Basic 认证:cfg.Username 非空时对全部路由生效。
 
 ## cmd/onvif-proxy(main,集成层,最后实现)

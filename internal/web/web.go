@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"sync"
 	"time"
@@ -18,7 +19,10 @@ import (
 	"github.com/Aiaid/onvif-proxy/internal/discovery"
 )
 
-//go:embed static/index.html
+// all:static embeds the whole UI tree, including the built bundle under
+// static/dist (the "all:" prefix keeps files the default rules would skip).
+//
+//go:embed all:static
 var staticFiles embed.FS
 
 // Backend is implemented by main; it wires the web layer to the live runtime.
@@ -76,6 +80,7 @@ func New(cfg config.WebConfig, backend Backend) *Server {
 	mux.HandleFunc("PUT /api/config", s.handlePutConfig)
 	mux.HandleFunc("GET /api/devices", s.handleDevices)
 	mux.HandleFunc("POST /api/devices", s.handleAddDevice)
+	mux.HandleFunc("PUT /api/devices/{uuid}", s.handleEditDevice)
 	mux.HandleFunc("DELETE /api/devices/{uuid}", s.handleDeleteDevice)
 	mux.HandleFunc("POST /api/test/rtsp", s.handleTestRTSP)
 	mux.HandleFunc("POST /api/test/streaminfo", s.handleTestStreamInfo)
@@ -85,6 +90,12 @@ func New(cfg config.WebConfig, backend Backend) *Server {
 	mux.HandleFunc("GET /api/discovery/log", s.handleDiscoveryLog)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	// Serve the built bundle (dist/app.js, dist/app.css) straight from the
+	// embedded FS; the sub-FS strips the "static/" prefix so /dist/* maps to
+	// static/dist/*.
+	if sub, err := fs.Sub(staticFiles, "static"); err == nil {
+		mux.Handle("GET /dist/", http.FileServerFS(sub))
+	}
 	mux.HandleFunc("GET /", s.handleIndex)
 
 	s.handler = s.withAuth(mux)

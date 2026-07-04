@@ -12,6 +12,10 @@ config.yaml
 *.out
 vendor/
 
+# node (web UI build toolchain; the built bundle under
+# internal/web/static/dist IS committed, node_modules is not)
+node_modules/
+
 # editor / os
 .DS_Store
 .idea/

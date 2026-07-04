@@ -101,8 +101,9 @@ onvif-proxy/
 │   ├── rtsp/                      # 原生 RTSP 探测客户端(OPTIONS/DESCRIBE、Digest、SDP 解析)
 │   ├── mediautil/                 # ffmpeg 快照 / MJPEG 预览封装
 │   └── web/
-│       ├── server.go              # REST API
-│       └── static/                # 内嵌 UI(单页,无构建步骤)
+│       ├── web.go / devices.go …  # REST API
+│       ├── ui/                     # Preact+TSX 源码(package.json / tsconfig / src),esbuild 构建
+│       └── static/                # go:embed 目标:index.html 薄壳 + dist/(提交的构建产物)
 ├── docs/                          # 本设计文档
 ├── config.example.yaml
 ├── Dockerfile
@@ -120,7 +121,7 @@ onvif-proxy/
 | UUID/MAC | `crypto/rand` 自生成(RFC 4122 v4 / 本地管理 MAC) | 免依赖;首次生成后写回 YAML 持久化,保证客户端眼中设备身份稳定 |
 | 快照/预览 | 外部 ffmpeg 进程 | 拉流解码自实现成本过高;ffmpeg 在 Docker 镜像内置,宿主机跑则要求 PATH 中存在 |
 | RTSP 探测 | **原生实现**(不走 ffmpeg) | UI"测试连接"需要精确区分错误类别(TCP 不通 / 401 认证失败 / 404 路径错 / SDP 无视频轨),ffmpeg 的报错不可编程解析 |
-| Web UI | 原生 HTML/JS 单页 + `go:embed` | 避免 Node 构建链;功能面小(配置编辑 + 测试面板),无需框架 |
+| Web UI | **Preact + TSX + esbuild**,`go:embed` 打包 | 组件化 + TypeScript 类型安全(设备卡片/表单/配置编辑器可维护性优于单文件原生 JS);Preact 运行时仅 ~6KB。构建产物(`internal/web/static/dist/{app.js,app.css}`)**提交进仓库**,`go:embed all:static` 打进二进制,运行时/Docker 镜像**零 Node 依赖**,单二进制不变。源码在 `internal/web/ui/`(`npm run build` 由 esbuild 打包,CI 校验 dist 未漂移) |
 
 ## 6. 并发与生命周期
 

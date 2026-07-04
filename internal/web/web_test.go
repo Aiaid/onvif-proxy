@@ -120,6 +120,29 @@ func TestDevices(t *testing.T) {
 	}
 }
 
+func TestServesIndexShell(t *testing.T) {
+	s := New(config.WebConfig{Port: 8080}, newTestBackend(t))
+	rec := do(s, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="app"`) || !strings.Contains(body, "/dist/app.js") {
+		t.Fatalf("index is not the SPA shell:\n%s", body)
+	}
+}
+
+func TestServesBundle(t *testing.T) {
+	s := New(config.WebConfig{Port: 8080}, newTestBackend(t))
+	rec := do(s, httptest.NewRequest(http.MethodGet, "/dist/app.js", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("dist/app.js status = %d (is the bundle built and committed?)", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "javascript") {
+		t.Fatalf("dist/app.js content-type = %q", ct)
+	}
+}
+
 func TestBasicAuthChallenge(t *testing.T) {
 	s := New(config.WebConfig{Port: 8080, Username: "admin", Password: "secret"}, newTestBackend(t))
 
@@ -215,6 +238,141 @@ func TestAddDevicePortConflict(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "port 8081") {
 		t.Fatalf("validation detail not surfaced: %s", rec.Body.String())
+	}
+}
+
+const editDeviceBody = `{
+  "name": "cam1-renamed",
+  "soap_port": 8081,
+  "rtsp_port": 8554,
+  "streams": [
+    {"name": "main", "rtsp": "rtsp://user:pass@192.168.1.99:554/ch9/main",
+     "width": 2560, "height": 1440, "framerate": 30, "bitrate": 6144}
+  ]
+}`
+
+func TestEditDeviceSuccess(t *testing.T) {
+	b := newTestBackend(t)
+	s := New(config.WebConfig{Port: 8080}, b)
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/devices/11111111-2222-3333-4444-555555555555", strings.NewReader(editDeviceBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := do(s, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if b.applied == nil {
+		t.Fatal("ApplyConfig was not called")
+	}
+	if b.appliedDry {
+		t.Fatal("device edit must not be a dry run")
+	}
+	applied := string(b.applied)
+	// The edited values replaced the originals.
+	if !strings.Contains(applied, "cam1-renamed") {
+		t.Fatalf("applied yaml missing new name:\n%s", applied)
+	}
+	if !strings.Contains(applied, "192.168.1.99") || !strings.Contains(applied, "2560") {
+		t.Fatalf("applied yaml missing new stream values:\n%s", applied)
+	}
+	// The identity uuid is preserved (the form never carried it).
+	if !strings.Contains(applied, "11111111-2222-3333-4444-555555555555") {
+		t.Fatalf("applied yaml dropped original uuid:\n%s", applied)
+	}
+	// The old name must be gone (replaced in place, not appended).
+	if strings.Contains(applied, "name: cam1\n") {
+		t.Fatalf("original device not replaced:\n%s", applied)
+	}
+	if _, err := config.Parse(b.applied); err != nil {
+		t.Fatalf("applied yaml does not re-parse: %v\n%s", err, applied)
+	}
+}
+
+func TestEditDeviceUnknownUUID(t *testing.T) {
+	b := newTestBackend(t)
+	s := New(config.WebConfig{Port: 8080}, b)
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/devices/00000000-0000-0000-0000-000000000000", strings.NewReader(editDeviceBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := do(s, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 body=%s", rec.Code, rec.Body.String())
+	}
+	if b.applied != nil {
+		t.Fatal("ApplyConfig must not be called for unknown uuid")
+	}
+}
+
+func TestEditDeviceValidationError(t *testing.T) {
+	b := newTestBackend(t)
+	b.applyErr = &config.ValidationError{Problems: []string{"port 8081 used by both web and devices"}}
+	s := New(config.WebConfig{Port: 8080}, b)
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/devices/11111111-2222-3333-4444-555555555555", strings.NewReader(editDeviceBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := do(s, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "port 8081") {
+		t.Fatalf("validation detail not surfaced: %s", rec.Body.String())
+	}
+}
+
+const authYAML = `
+web:
+  port: 8080
+devices:
+  - name: cam1
+    uuid: 11111111-2222-3333-4444-555555555555
+    ports:
+      soap: 8081
+      rtsp: 8554
+    auth:
+      username: onvifuser
+      password: onvifsecret
+    streams:
+      - name: main
+        rtsp: rtsp://user:pass@192.168.1.50:554/ch1/main
+        width: 1920
+        height: 1080
+        framerate: 25
+        bitrate: 4096
+`
+
+// editKeepAuthBody keeps the username but sends a blank password, which the
+// edit form does when the operator leaves the password field untouched.
+const editKeepAuthBody = `{
+  "name": "cam1",
+  "soap_port": 8081,
+  "rtsp_port": 8554,
+  "auth": {"username": "onvifuser", "password": ""},
+  "streams": [
+    {"name": "main", "rtsp": "rtsp://user:pass@192.168.1.50:554/ch1/main",
+     "width": 1920, "height": 1080, "framerate": 25, "bitrate": 4096}
+  ]
+}`
+
+func TestEditDevicePreservesAuthPassword(t *testing.T) {
+	b := &mockBackend{yaml: []byte(authYAML)}
+	cfg, err := config.Parse([]byte(authYAML))
+	if err != nil {
+		t.Fatalf("parse auth yaml: %v", err)
+	}
+	for _, d := range cfg.Devices {
+		b.devices = append(b.devices, DeviceRuntime{Device: d, Running: true})
+	}
+	s := New(config.WebConfig{Port: 8080}, b)
+	req := httptest.NewRequest(http.MethodPut,
+		"/api/devices/11111111-2222-3333-4444-555555555555", strings.NewReader(editKeepAuthBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := do(s, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	// The blank password must not wipe the original credential.
+	if !strings.Contains(string(b.applied), "onvifsecret") {
+		t.Fatalf("original auth password was dropped:\n%s", b.applied)
 	}
 }
 

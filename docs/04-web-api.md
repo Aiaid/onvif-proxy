@@ -12,8 +12,9 @@ Web 服务默认监听 `:8080`,提供 REST API 与内嵌单页 UI。可选 HTTP 
 |-----------|------|
 | `GET /api/config` | 返回当前 config.yaml 原文(`text/plain`),UI 编辑器直接展示 |
 | `PUT /api/config` | Body = 完整 YAML 文本。流程:解析 → 校验(语法/端口冲突/字段)→ 原子落盘 → 热重载。校验失败返回 400 + 逐条错误,**不落盘** |
-| `GET /api/devices` | 结构化设备列表 + 运行时状态:`{name, uuid, soap_port, running, endpoints:{device_service, snapshot, streams:[{name, profile_token, rtsp_uri}]}}`(streams 数组与配置的多 Profile 一一对应) |
-| `POST /api/devices` | Body JSON `{name, soap_port, rtsp_port, auth?, streams:[{name,rtsp,width,height,framerate,bitrate}], snapshot?}`。合入当前 YAML → 校验 → 落盘 → 热重载;uuid/mac/serial 交由加载时生成。校验失败(含端口冲突)返回 400,成功 `{"status":"applied"}` |
+| `GET /api/devices` | 结构化设备列表 + 运行时状态:`{name, uuid, soap_port, rtsp_port, running, auth_user, endpoints:{device_service, snapshot, streams:[{name, profile_token, rtsp_uri, rtsp, width, height, framerate, bitrate}]}}`(streams 数组与配置的多 Profile 一一对应)。`rtsp_port`/`auth_user` 与每个 stream 的 `rtsp`(上游源 URL,可能含凭证)、`width/height/framerate/bitrate` 是为**编辑表单预填**而补充的字段:源 URL 凭证的暴露口径与 `GET /api/config`(原样返回全文)一致,均由 web Basic 认证把关;ONVIF 密码**不**下发(见下方 PUT 的密码保留语义) |
+| `POST /api/devices` | Body JSON DeviceSpec `{name, soap_port, rtsp_port, auth?, streams:[{name,rtsp,width,height,framerate,bitrate}], snapshot?}`。合入当前 YAML → 校验 → 落盘 → 热重载;uuid/mac/serial 交由加载时生成。校验失败(含端口冲突)返回 400,成功 `{"status":"applied"}` |
+| `PUT /api/devices/{uuid}` | Body 与 POST 相同的 DeviceSpec。按 uuid 定位设备(未知 404)→ 用表单值构建新 Device,**原位替换**,但**保留原 uuid/mac/serial 与 info**(表单不携带这些)→ 校验 → 落盘 → 热重载。成功 `{"status":"applied"}`,校验/端口冲突 400 透传。**ONVIF 密码保留语义**:DTO 只暴露 `auth_user` 不暴露密码,故当 body 携带 `auth.username` 但 `auth.password` 为空时视为"保持原密码不变";清空 username(不带 auth 对象)则移除 ONVIF 认证 |
 | `DELETE /api/devices/{uuid}` | 按 uuid 从当前配置删除设备 → 校验 → 落盘 → 热重载。未知 uuid 返回 404,成功 `{"status":"applied"}` |
 
 ### 1.2 测试工具(对应 UI 测试面板)
@@ -36,6 +37,10 @@ Web 服务默认监听 `:8080`,提供 REST API 与内嵌单页 UI。可选 HTTP 
 
 ## 2. UI 页面设计(单页,三个区块)
 
+**技术栈**:Preact + TSX,由 esbuild 打包成 `static/dist/{app.js,app.css}`(提交进仓库,`go:embed` 进二进制,运行时零 Node)。源码在 `internal/web/ui/`,`index.html` 为薄壳(`<div id="app">` + `/dist/app.js`)。开发:`cd internal/web/ui && npm install && npm run check && npm run build`。
+
+**健壮性约定(全局)**:所有异步操作统一走 `useAsync` + `AsyncButton` 机制 —— 按钮点击后**立即禁用并显示转圈文案**,请求完成/失败后恢复;`useAsync` 内部有再入守卫,天然防双击/防表单重复提交;删除类操作 `confirm()` 通过后按钮即锁。`fetch` 统一封装(`api.ts`):20s 超时(AbortController)、非 2xx 抛 `ApiError`、解析 `{error,detail}` 错误信封。没有裸 `onClick` 异步。
+
 ### 2.1 设备列表(首页)
 
 每台设备一张卡片:
@@ -45,14 +50,16 @@ Web 服务默认监听 `:8080`,提供 REST API 与内嵌单页 UI。可选 HTTP 
 │ 车库摄像头                      ● 运行中        │
 │ ONVIF: http://192.168.1.10:8081/onvif/device_service
 │ RTSP:  rtsp://192.168.1.10:8554/h264/ch1/main…  │
-│ [测试连接] [快照] [预览] [ONVIF 自检]            │
+│ [测试连接] [快照] [预览] [ONVIF 自检] [编辑] [删除] │
 └────────────────────────────────────────────────┘
 ```
 
-- **测试连接** → `/api/test/rtsp`,弹出结果:连通/认证/编码/延迟,错误按类别给中文提示("TCP 连不通,检查 IP 与端口" / "认证失败,检查用户名密码" / "路径 404");
+- **测试连接** → `/api/test/rtsp`,卡片内显示结果:连通/认证/编码/延迟,错误按类别给中文提示("TCP 连不通,检查 IP 与端口" / "认证失败,检查用户名密码" / "路径 404");
 - **快照** → 卡片内直接显示 JPEG;
-- **预览** → 弹层 `<img src=/api/preview…>` 实况,关闭即断流;
-- **ONVIF 自检** → 渲染方法×状态表格(绿✅/红❌),即本项目立项时那张对比表的自动化版。
+- **预览** → 弹层 `<img src=/api/preview…>` 实况,关闭(点遮罩/按钮/Esc)即清空 src 断流杀 ffmpeg;
+- **ONVIF 自检** → 渲染方法×状态表格(绿✅/红❌),即本项目立项时那张对比表的自动化版;
+- **编辑** → 打开与"新增设备"同一表单组件的**编辑模式**,用 `GET /api/devices` 补充的字段(soap/rtsp 端口、`auth_user`、每流 `rtsp/width/height/framerate/bitrate`)预填,提交走 `PUT /api/devices/{uuid}`;ONVIF 密码框留空即保持原密码;
+- **删除** → `confirm` 后 `DELETE /api/devices/{uuid}`,成功后刷新设备列表与配置编辑器。
 
 ### 2.2 配置编辑
 

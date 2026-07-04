@@ -17,6 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Build the web UI bundle first and fail if the committed artifact under
+      # internal/web/static/dist is stale (someone edited the TSX sources but
+      # forgot to rebuild and commit dist/). go:embed bakes dist into the binary.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build web UI
+        run: |
+          cd internal/web/ui
+          npm ci
+          npm run check
+          npm run build
+
+      - name: Ensure committed bundle is up to date
+        run: git diff --exit-code internal/web/static/dist
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
