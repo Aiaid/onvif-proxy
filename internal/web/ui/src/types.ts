@@ -54,6 +54,8 @@ export interface StreamInfo {
   width: number;
   height: number;
   fps: number;
+  /** kbps, measured or source-declared; 0 = unknown */
+  bitrate: number;
 }
 
 export interface OnvifCheck {

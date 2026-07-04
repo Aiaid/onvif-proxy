@@ -91,7 +91,9 @@ func (s *Server) handleTestStreamInfo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid url", "url must be a valid rtsp:// URL")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	// ffprobe metadata plus the ~3s bitrate sampling fallback; kept under the
+	// frontend's 20s fetch timeout.
+	ctx, cancel := context.WithTimeout(r.Context(), 18*time.Second)
 	defer cancel()
 	info, err := mediautil.ProbeInfo(ctx, req.URL)
 	if err != nil {

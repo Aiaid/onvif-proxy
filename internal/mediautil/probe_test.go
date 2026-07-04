@@ -52,3 +52,23 @@ func TestProbeInfoUnreachable(t *testing.T) {
 		t.Fatalf("error should mention ffprobe, got: %v", err)
 	}
 }
+
+func TestKbpsFromSummary(t *testing.T) {
+	cases := []struct {
+		summary string
+		seconds int
+		want    int
+	}{
+		// 1131 KiB over 3s -> 1131*1024*8/3/1000 ≈ 3088 kbps
+		{"video:1131KiB audio:0KiB subtitle:0KiB other streams:0KiB", 3, 3088},
+		{"video: 750kB audio:12kB", 3, 2048},
+		{"no summary here", 3, 0},
+		{"video:0KiB", 3, 0},
+		{"video:1131KiB", 0, 0},
+	}
+	for _, c := range cases {
+		if got := kbpsFromSummary(c.summary, c.seconds); got != c.want {
+			t.Errorf("kbpsFromSummary(%q,%d) = %d, want %d", c.summary, c.seconds, got, c.want)
+		}
+	}
+}

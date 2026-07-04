@@ -166,9 +166,11 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
       if (j.width) patch.width = String(j.width);
       if (j.height) patch.height = String(j.height);
       if (j.fps) patch.framerate = String(j.fps);
+      if (j.bitrate) patch.bitrate = String(j.bitrate);
       patch.out = (
         <Msg kind="ok">
           已回填: {j.codec || ""} {j.width}×{j.height} @{j.fps}fps
+          {j.bitrate ? ` · 实测码率 ${j.bitrate} kbps` : " · 码率未知,保留手填值"}
         </Msg>
       );
       patchRow(id, patch);
