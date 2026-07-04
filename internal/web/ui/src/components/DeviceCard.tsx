@@ -1,6 +1,6 @@
 import type { ComponentChild } from "preact";
 import { useState } from "preact/hooks";
-import { apiBlob, apiJSON, errText } from "../api";
+import { apiBlob, apiJSON, errText, jsonBody } from "../api";
 import { useT } from "../i18n";
 import type { Dict } from "../i18n";
 import type { DeviceView, OnvifCheck, RTSPResult } from "../types";
@@ -74,14 +74,23 @@ export function DeviceCard({ device, onEdit, onChanged }: Props) {
     });
   };
 
+  // proxyTestURL builds the URL the card's connectivity test probes: the
+  // device's proxy address with the upstream credentials injected. RTSP auth
+  // is end-to-end, so probing the bare proxy URI would always fail with 401
+  // on authenticated cameras; borrowing the upstream userinfo exercises the
+  // whole proxy chain the way a real ONVIF client (given the camera's
+  // credentials) would.
+  const proxyTestURL = (): string => {
+    const uri = primary?.rtsp_uri || "";
+    const userinfo = /^rtsp:\/\/([^@/]+)@/.exec(primary?.rtsp || "");
+    if (!userinfo) return uri;
+    return uri.replace(/^rtsp:\/\//, `rtsp://${userinfo[1]}@`);
+  };
+
   const testRTSP = async () => {
     setOut(<span class="muted">{t.busyProbing}</span>);
     try {
-      const j = await apiJSON<RTSPResult>("/api/test/rtsp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: primary?.rtsp_uri || "" }),
-      });
+      const j = await apiJSON<RTSPResult>("/api/test/rtsp", jsonBody({ url: proxyTestURL() }));
       setOut(rtspResultView(t, j));
     } catch (e) {
       setOut(<Msg kind="bad">{t.requestFailed(errText(e))}</Msg>);
