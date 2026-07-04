@@ -69,6 +69,38 @@ func toRTSPView(res *rtsp.Result) rtspView {
 	return v
 }
 
+// handleTestStreamInfo runs ffprobe against an rtsp:// URL and returns the
+// first video stream's codec, resolution and frame rate, used by the add-device
+// form to auto-fill width/height/framerate. Only the RTSP scheme is accepted.
+// When ffmpeg (and thus ffprobe) is unavailable it returns 501.
+func (s *Server) handleTestStreamInfo(w http.ResponseWriter, r *http.Request) {
+	if !mediautil.Available() {
+		writeErr(w, http.StatusNotImplemented, "ffmpeg unavailable",
+			"ffprobe is required for stream probing but is not on PATH")
+		return
+	}
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body", err.Error())
+		return
+	}
+	u, err := url.Parse(req.URL)
+	if err != nil || u.Scheme != "rtsp" || u.Host == "" {
+		writeErr(w, http.StatusBadRequest, "invalid url", "url must be a valid rtsp:// URL")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	info, err := mediautil.ProbeInfo(ctx, req.URL)
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "probe failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
 // handleTestSnapshot grabs a single JPEG frame from a device stream.
 func (s *Server) handleTestSnapshot(w http.ResponseWriter, r *http.Request) {
 	dev := s.findDevice(r.URL.Query().Get("device"))

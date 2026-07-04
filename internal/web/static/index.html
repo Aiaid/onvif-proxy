@@ -49,6 +49,26 @@
     display: flex; align-items: center; justify-content: center; flex-direction: column; }
   .overlay img { max-width: 92vw; max-height: 82vh; border: 1px solid var(--line); border-radius: 6px; }
   .overlay button { margin-top: 14px; }
+  .row-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  button.danger { border-color: var(--bad); color: var(--bad); }
+  button.danger:hover { background: var(--bad); color: #fff; }
+  /* modal */
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 30;
+    display: flex; align-items: flex-start; justify-content: center; overflow: auto; padding: 30px 12px; }
+  .modal .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    width: 640px; max-width: 100%; padding: 18px 20px; }
+  .modal h3 { margin: 0 0 12px; font-size: 16px; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; color: var(--muted); font-size: 12.5px; margin-bottom: 4px; }
+  .field input { width: 100%; background: #11151a; color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 9px; font-size: 13px; font-family: inherit; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stream-row { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: var(--panel2); }
+  .stream-row .top { display: flex; gap: 8px; align-items: flex-end; }
+  .stream-row .top .field { flex: 1; margin-bottom: 8px; }
+  .inline { display: flex; gap: 8px; }
+  .inline .field { flex: 1; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -60,7 +80,10 @@
 </header>
 
 <main>
-  <h2>设备</h2>
+  <div class="row-head">
+    <h2>设备</h2>
+    <button id="add-device" class="primary">➕ 新增设备</button>
+  </div>
   <div id="devices"><p class="muted">加载中…</p></div>
 
   <h2>配置</h2>
@@ -122,6 +145,7 @@ async function loadDevices() {
           '<button data-act="snap">快照</button>' +
           '<button data-act="preview">预览</button>' +
           '<button data-act="onvif">ONVIF 自检</button>' +
+          '<button data-act="delete" class="danger">删除</button>' +
         '</div>' +
         '<div class="out"></div>';
       const out = el.querySelector(".out");
@@ -129,6 +153,7 @@ async function loadDevices() {
       el.querySelector('[data-act="snap"]').onclick = () => snapshot(d, primary, out);
       el.querySelector('[data-act="preview"]').onclick = () => preview(d, primary);
       el.querySelector('[data-act="onvif"]').onclick = () => onvifTest(d, out);
+      el.querySelector('[data-act="delete"]').onclick = () => deleteDevice(d, out);
       box.appendChild(el);
     }
   } catch (e) {
@@ -213,6 +238,185 @@ async function onvifTest(d, out) {
   } catch (e) { out.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>'; }
 }
 
+async function deleteDevice(d, out) {
+  if (!confirm('确定删除设备"' + (d.name || d.uuid) + '"?此操作会立即热重载配置。')) return;
+  out.innerHTML = '<span class="muted">删除中…</span>';
+  try {
+    const r = await api("/api/devices/" + encodeURIComponent(d.uuid), { method: "DELETE" });
+    if (r.ok) { loadDevices(); loadConfig(); return; }
+    const j = await r.json();
+    out.innerHTML = '<div class="msg bad">' + esc(j.error || "删除失败") + '<br><span class="muted">' + esc(j.detail || "") + '</span></div>';
+  } catch (e) { out.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>'; }
+}
+
+// ---- 新增设备表单 --------------------------------------------------------
+
+// 从现有设备计算下一个空闲端口对(soap 起始 8081、rtsp 起始 8554)。
+async function suggestPorts() {
+  let soap = 8080, rtsp = 8553;
+  try {
+    const r = await api("/api/devices");
+    const list = await r.json();
+    for (const d of (list || [])) {
+      if (d.soap_port > soap) soap = d.soap_port;
+      for (const st of (d.endpoints.streams || [])) {
+        const m = /rtsp:\/\/[^/]*:(\d+)/.exec(st.rtsp_uri || "");
+        if (m) { const p = parseInt(m[1], 10); if (p > rtsp) rtsp = p; }
+      }
+    }
+  } catch (e) { /* 用默认值 */ }
+  return { soap: soap + 1, rtsp: rtsp + 1 };
+}
+
+let streamSeq = 0;
+const SUB_NAMES = ["sub", "mobile", "third", "fourth"];
+
+function streamRowHTML(idx, name) {
+  return '' +
+    '<div class="stream-row" data-stream="' + idx + '">' +
+      '<div class="top">' +
+        '<div class="field"><label>名称</label><input class="s-name" value="' + esc(name) + '"></div>' +
+        '<div class="field" style="flex:3"><label>RTSP URL</label><input class="s-rtsp" placeholder="rtsp://user:pass@host:554/path"></div>' +
+        '<button type="button" class="s-probe">探测</button>' +
+        (idx === 0 ? '' : '<button type="button" class="danger s-del">移除</button>') +
+      '</div>' +
+      '<div class="grid4">' +
+        '<div class="field"><label>宽</label><input class="s-w" type="number"></div>' +
+        '<div class="field"><label>高</label><input class="s-h" type="number"></div>' +
+        '<div class="field"><label>帧率</label><input class="s-fps" type="number"></div>' +
+        '<div class="field"><label>码率(kbps)</label><input class="s-br" type="number" value="4096"></div>' +
+      '</div>' +
+      '<div class="s-out out"></div>' +
+    '</div>';
+}
+
+function wireStreamRow(row) {
+  row.querySelector(".s-probe").onclick = () => probeStream(row);
+  const del = row.querySelector(".s-del");
+  if (del) del.onclick = () => row.remove();
+}
+
+async function probeStream(row) {
+  const url = row.querySelector(".s-rtsp").value.trim();
+  const out = row.querySelector(".s-out");
+  if (!url) { out.innerHTML = '<div class="msg bad">请先填写 RTSP URL。</div>'; return; }
+  out.innerHTML = '<span class="muted">探测连通性…</span>';
+  try {
+    const r = await api("/api/test/rtsp", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const j = await r.json();
+    if (r.status !== 200) { out.innerHTML = '<div class="msg bad">' + esc(j.error || "错误") + '<br>' + esc(j.detail || "") + '</div>'; return; }
+    if (!j.ok) {
+      const hint = RTSP_HINT[j.err_kind] || "探测失败。";
+      out.innerHTML = '<div class="msg bad">' + esc(hint) + '<br><span class="muted">' + esc(j.err_kind || "") + ': ' + esc(j.err_detail || "") + '</span></div>';
+      return;
+    }
+    const tracks = (j.tracks || []).map((t) => t.type + ":" + t.codec).join(", ");
+    out.innerHTML = '<div class="msg ok">连通 · 认证 ' + esc(j.auth) + ' · 延迟 ' + esc(j.latency_ms) + 'ms · 编码: ' + esc(tracks || "-") + '</div>';
+    // 连通后再取分辨率/帧率回填。
+    await fillStreamInfo(row, url);
+  } catch (e) { out.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>'; }
+}
+
+async function fillStreamInfo(row, url) {
+  const out = row.querySelector(".s-out");
+  try {
+    const r = await api("/api/test/streaminfo", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const j = await r.json();
+    if (r.status === 501) { out.innerHTML += '<div class="msg">ffmpeg 不可用,分辨率/帧率请手填。</div>'; return; }
+    if (!r.ok) { out.innerHTML += '<div class="msg bad">回填失败: ' + esc(j.detail || j.error || "") + '</div>'; return; }
+    if (j.width) row.querySelector(".s-w").value = j.width;
+    if (j.height) row.querySelector(".s-h").value = j.height;
+    if (j.fps) row.querySelector(".s-fps").value = j.fps;
+    out.innerHTML += '<div class="msg ok">已回填: ' + esc(j.codec || "") + ' ' + esc(j.width) + '×' + esc(j.height) + ' @' + esc(j.fps) + 'fps</div>';
+  } catch (e) { out.innerHTML += '<div class="msg bad">回填请求失败: ' + esc(e.message) + '</div>'; }
+}
+
+async function openAddDevice() {
+  streamSeq = 0;
+  const ports = await suggestPorts();
+  const modal = document.createElement("div");
+  modal.className = "modal";
+  modal.innerHTML =
+    '<div class="box">' +
+      '<h3>新增设备</h3>' +
+      '<div class="field"><label>设备名称</label><input id="f-name" placeholder="车库摄像头"></div>' +
+      '<div id="f-streams"></div>' +
+      '<button type="button" id="f-add-stream">+ 添加子码流</button>' +
+      '<div class="inline" style="margin-top:12px">' +
+        '<div class="field"><label>SOAP 端口</label><input id="f-soap" type="number" value="' + ports.soap + '"></div>' +
+        '<div class="field"><label>RTSP 端口</label><input id="f-rtsp" type="number" value="' + ports.rtsp + '"></div>' +
+      '</div>' +
+      '<div class="inline">' +
+        '<div class="field"><label>ONVIF 用户名(可选)</label><input id="f-user"></div>' +
+        '<div class="field"><label>ONVIF 密码(可选)</label><input id="f-pass"></div>' +
+      '</div>' +
+      '<div id="f-msg"></div>' +
+      '<div class="actions">' +
+        '<button type="button" id="f-cancel">取消</button>' +
+        '<button type="button" class="primary" id="f-submit">添加</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(modal);
+
+  const streamsBox = modal.querySelector("#f-streams");
+  const addStream = () => {
+    const idx = streamSeq++;
+    const name = idx === 0 ? "main" : (SUB_NAMES[idx] || ("stream" + idx));
+    streamsBox.insertAdjacentHTML("beforeend", streamRowHTML(idx, name));
+    wireStreamRow(streamsBox.lastElementChild);
+  };
+  addStream(); // 主流
+
+  modal.querySelector("#f-add-stream").onclick = addStream;
+  const close = () => modal.remove();
+  modal.querySelector("#f-cancel").onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  modal.querySelector("#f-submit").onclick = () => submitAddDevice(modal);
+}
+
+function submitAddDevice(modal) {
+  const msg = modal.querySelector("#f-msg");
+  const num = (sel) => parseInt(modal.querySelector(sel).value, 10) || 0;
+  const streams = [];
+  for (const row of modal.querySelectorAll(".stream-row")) {
+    streams.push({
+      name: row.querySelector(".s-name").value.trim(),
+      rtsp: row.querySelector(".s-rtsp").value.trim(),
+      width: parseInt(row.querySelector(".s-w").value, 10) || 0,
+      height: parseInt(row.querySelector(".s-h").value, 10) || 0,
+      framerate: parseInt(row.querySelector(".s-fps").value, 10) || 0,
+      bitrate: parseInt(row.querySelector(".s-br").value, 10) || 0,
+    });
+  }
+  const body = {
+    name: modal.querySelector("#f-name").value.trim(),
+    soap_port: num("#f-soap"),
+    rtsp_port: num("#f-rtsp"),
+    streams: streams,
+  };
+  const user = modal.querySelector("#f-user").value.trim();
+  const pass = modal.querySelector("#f-pass").value.trim();
+  if (user || pass) body.auth = { username: user, password: pass };
+
+  msg.innerHTML = '<span class="muted">提交中…</span>';
+  api("/api/devices", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  }).then(async (r) => {
+    if (r.ok) { modal.remove(); loadDevices(); loadConfig(); return; }
+    const j = await r.json();
+    msg.innerHTML = '<div class="msg bad">' + esc(j.error || "添加失败") + '</div><pre>' + esc(j.detail || "") + '</pre>';
+  }).catch((e) => {
+    msg.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>';
+  });
+}
+
 async function loadConfig() {
   try {
     const r = await api("/api/config");
@@ -241,6 +445,7 @@ async function putConfig(dryRun) {
 $("#cfg-validate").onclick = () => putConfig(true);
 $("#cfg-save").onclick = () => putConfig(false);
 $("#cfg-reload").onclick = loadConfig;
+$("#add-device").onclick = openAddDevice;
 
 loadStatus();
 loadDevices();

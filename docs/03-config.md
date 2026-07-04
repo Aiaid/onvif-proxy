@@ -124,5 +124,5 @@ devices:
 ## 3. 生成配置的途径
 
 1. **零配置启动(已实现)**:config 文件不存在时自动生成一份默认配置(web 开启、devices 为空),然后通过 Web UI 添加设备;
-2. **Web UI**:表单新增设备 → 填 RTSP URL → "测试连接"自动探测编码/分辨率回填 → 保存;
+2. **Web UI(已实现)**:"➕ 新增设备"表单 → 填主流/子码流 RTSP URL → "探测"按钮先测连通性再自动回填编码/分辨率/帧率 → 填名称与端口(默认建议下一空闲端口对)、可选 ONVIF 认证 → "添加"经 `POST /api/devices` 合入 YAML 并热重载;设备卡片"删除"按钮经 `DELETE /api/devices/{uuid}` 移除;
 3. 手写 YAML(照抄 `config.example.yaml`)。
