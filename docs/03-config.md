@@ -101,7 +101,7 @@ devices:
 | `streams[].rtsp` | ✅ | 必须为 `rtsp://` scheme;可含 userinfo;host、path 解析后用于代理目标与 StreamUri 路径 |
 | `streams[].width/height/framerate/bitrate` | ✅ | 正整数;仅用于 ONVIF 能力通告,不影响真实流 |
 | `streams[].proxy_port` | — | 该流上游 host:port 与主流不同时**必填**(独立代理监听);相同则省略,共用 `ports.rtsp` |
-| `auth` | — | 提供则 username/password 均非空 |
+| `auth` | — | 提供则 username/password 均非空。**与 RTSP 凭证是独立的两层**:auth 保护虚拟设备的 ONVIF 接口(WSSE),RTSP 认证由客户端与真实摄像头端到端完成。省略 = 全放行(推荐);要配则建议与摄像头 RTSP 账密一致(Unifi Protect 只填一组账密并同时用于两层) |
 | `snapshot.url` | — | 填了走透传模式;`http(s)://` scheme |
 | `snapshot.stream` | — | ffmpeg 抓帧模式下的取帧流名,默认 `streams[0].name` |
 

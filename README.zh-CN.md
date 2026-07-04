@@ -29,18 +29,45 @@
 | [docs/04-web-api.md](docs/04-web-api.md) | Web 后端 REST API 与 UI 设计 |
 | [docs/05-deployment.md](docs/05-deployment.md) | Docker / macvlan 部署方案 |
 
-## 快速开始(规划)
+## 快速开始(Docker)
+
+双架构镜像(`linux/amd64` + `linux/arm64`,内置 ffmpeg/ffprobe)在每次 push 到 `main` 时发布到两个仓库:
+
+| 仓库 | 镜像 |
+|------|------|
+| GHCR | `ghcr.io/aiaid/onvif-proxy` |
+| Docker Hub | `docker.io/anend/onvif-proxy` |
+
+Tag 规则:`latest`(main)、`main`、`sha-<短哈希>`、发版时的 `vX.Y.Z`。
 
 ```bash
-# 1. 准备配置
-cp config.example.yaml config.yaml && vim config.yaml
+# Linux host 网络(最简单;组播发现可用)
+docker run -d --name onvif-proxy --network host \
+  -v "$(pwd)/config:/config" \
+  ghcr.io/aiaid/onvif-proxy:latest
 
-# 2. 启动
-docker compose up -d
-
-# 3. 打开 Web UI 验证
+# 打开 Web UI,用表单添加设备
 open http://<host>:8080
 ```
+
+首次运行**无需准备配置文件** —— 会自动生成 `./config/config.yaml`,设备完全可以通过 Web UI 添加("➕ 新增设备"表单会探测你的 RTSP URL 并自动回填分辨率/帧率)。macvlan(每个代理独立 IP/MAC,Unifi Protect 体验最佳)或 bridge 模式(Docker Desktop)见 [docs/05-deployment.md](docs/05-deployment.md) 与 [compose.yaml](compose.yaml)。
+
+## 认证模型(RTSP 与 ONVIF 两层)
+
+存在**互相独立的两层凭证**,这是最容易混淆的点:
+
+| 层 | 配置位置 | 谁来校验 | 作用 |
+|----|----------|----------|------|
+| RTSP 密码 | `streams[].rtsp` URL 里的 `user:pass@` | **真实摄像头** | 拉流认证 |
+| ONVIF 密码 | `devices[].auth`(可省略) | **onvif-proxy 本身**(WSSE) | 保护虚拟设备的 SOAP 接口 |
+
+关键行为:
+
+- RTSP 代理是纯 TCP 透传,**RTSP 认证端到端**:`GetStreamUri` 返回的地址不含凭证,ONVIF 客户端必须用**真实摄像头的 RTSP 账密**向摄像头本身认证;
+- 配置里 URL 带的 `user:pass@` 只供 onvif-proxy 自己使用(快照、预览、探测),不会下发给 ONVIF 客户端;
+- 不配 `devices[].auth` = ONVIF 接口全放行(可信内网推荐)。
+
+**Unifi Protect 提示**:Protect 收编时只让填一组账密,并同时用于两层。请填**真实摄像头的 RTSP 账密**,且 `devices[].auth` 要么不配、要么配成完全相同的一组 —— 千万不要配成不同的。
 
 ## 状态
 

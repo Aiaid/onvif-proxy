@@ -31,18 +31,45 @@ Design docs (currently in Chinese; the code and config schema are English):
 | [docs/04-web-api.md](docs/04-web-api.md) | Web backend REST API and UI design |
 | [docs/05-deployment.md](docs/05-deployment.md) | Docker / macvlan deployment |
 
-## Quick start (planned)
+## Quick start (Docker)
+
+Multi-arch images (`linux/amd64` + `linux/arm64`, ffmpeg/ffprobe included) are published to both registries on every push to `main`:
+
+| Registry | Image |
+|----------|-------|
+| GHCR | `ghcr.io/aiaid/onvif-proxy` |
+| Docker Hub | `docker.io/anend/onvif-proxy` |
+
+Tags: `latest` (main), `main`, `sha-<short>`, and `vX.Y.Z` on release tags.
 
 ```bash
-# 1. Prepare a config
-cp config.example.yaml config.yaml && vim config.yaml
+# Linux host networking (simplest; multicast discovery works)
+docker run -d --name onvif-proxy --network host \
+  -v "$(pwd)/config:/config" \
+  ghcr.io/aiaid/onvif-proxy:latest
 
-# 2. Run
-docker compose up -d
-
-# 3. Open the web UI to verify
+# Open the web UI and add devices through the form
 open http://<host>:8080
 ```
+
+No config file needed for the first run — a default one is generated under `./config/config.yaml`, and devices can be added entirely through the web UI ("➕ 新增设备" form probes your RTSP URL and autofills resolution/fps). For macvlan (own IP/MAC per proxy, best Unifi Protect experience) or bridge mode (Docker Desktop), see [docs/05-deployment.md](docs/05-deployment.md) and [compose.yaml](compose.yaml).
+
+## Authentication model (RTSP vs ONVIF)
+
+There are **two independent credential layers** — a frequent point of confusion:
+
+| Layer | Where it lives | Verified by | Purpose |
+|-------|----------------|-------------|---------|
+| RTSP credentials | `user:pass@` inside `streams[].rtsp` | the **real camera** | pulling the stream |
+| ONVIF credentials | `devices[].auth` (optional) | **onvif-proxy** (WSSE) | protecting the virtual device's SOAP API |
+
+Key behavior:
+
+- The RTSP proxy is a plain TCP passthrough: **RTSP auth is end-to-end**. `GetStreamUri` never exposes credentials; the ONVIF client must authenticate against the real camera with the **camera's own RTSP credentials**.
+- The `user:pass@` in the config is only used by onvif-proxy itself (snapshots, previews, probing) and is never handed to ONVIF clients.
+- Omitting `devices[].auth` means the ONVIF endpoints accept any client (recommended for trusted LANs).
+
+**Unifi Protect tip:** Protect asks for a single username/password during adoption and uses it for *both* layers. Enter the real camera's RTSP credentials there, and either leave `devices[].auth` unset or set it to the exact same pair — never a different one.
 
 ## Status
 

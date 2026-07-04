@@ -347,6 +347,8 @@ async function openAddDevice() {
       '<h3>新增设备</h3>' +
       '<div class="field"><label>设备名称</label><input id="f-name" placeholder="车库摄像头"></div>' +
       '<div id="f-streams"></div>' +
+      '<p class="muted">RTSP URL 中的账密(user:pass@)只供本代理抓快照/探测使用,<b>不会</b>下发给 ONVIF 客户端;' +
+      '客户端拉流时由真实摄像头直接认证,所以在 Unifi Protect 等客户端里收编时填的账密必须是<b>摄像头本身的 RTSP 账密</b>。</p>' +
       '<button type="button" id="f-add-stream">+ 添加子码流</button>' +
       '<div class="inline" style="margin-top:12px">' +
         '<div class="field"><label>SOAP 端口</label><input id="f-soap" type="number" value="' + ports.soap + '"></div>' +
@@ -356,6 +358,8 @@ async function openAddDevice() {
         '<div class="field"><label>ONVIF 用户名(可选)</label><input id="f-user"></div>' +
         '<div class="field"><label>ONVIF 密码(可选)</label><input id="f-pass"></div>' +
       '</div>' +
+      '<p class="muted">ONVIF 认证(WSSE)与上面的 RTSP 密码是<b>独立的两层</b>:这里保护的是虚拟设备的 ONVIF 接口。' +
+      '留空 = 不校验(推荐)。若要设置,建议与摄像头 RTSP 账密<b>相同</b>——Unifi Protect 只让填一组账密,并同时用于 ONVIF 与 RTSP 两层。</p>' +
       '<div id="f-msg"></div>' +
       '<div class="actions">' +
         '<button type="button" id="f-cancel">取消</button>' +
