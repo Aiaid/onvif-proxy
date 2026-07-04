@@ -1,0 +1,18 @@
+# binaries
+/onvif-proxy
+/dist/
+/out/
+
+# local runtime config (contains camera credentials) — commit only the example
+config.yaml
+/config/
+
+# go
+*.test
+*.out
+vendor/
+
+# editor / os
+.DS_Store
+.idea/
+.vscode/
