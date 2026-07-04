@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { apiJSON, errText } from "../api";
+import { useT } from "../i18n";
 import type { DeviceView } from "../types";
 import { DeviceCard } from "./DeviceCard";
 import { Msg } from "./Msg";
@@ -14,6 +15,7 @@ interface Props {
 // DeviceList loads /api/devices (on mount, whenever refreshToken changes, and on
 // a 15s poll) and renders one DeviceCard per device.
 export function DeviceList({ refreshToken, onAdd, onEdit, onChanged }: Props) {
+  const t = useT();
   const [devices, setDevices] = useState<DeviceView[] | null>(null);
   const [error, setError] = useState<string>("");
 
@@ -41,14 +43,14 @@ export function DeviceList({ refreshToken, onAdd, onEdit, onChanged }: Props) {
   return (
     <>
       <div class="row-head">
-        <h2>设备</h2>
+        <h2>{t.devicesHeading}</h2>
         <button type="button" class="primary" onClick={onAdd}>
-          ➕ 新增设备
+          {t.addDevice}
         </button>
       </div>
-      {error && <Msg kind="bad">加载设备失败: {error}</Msg>}
-      {devices === null && !error && <p class="muted">加载中…</p>}
-      {devices !== null && devices.length === 0 && <p class="muted">暂无设备。</p>}
+      {error && <Msg kind="bad">{t.loadDevicesFailed(error)}</Msg>}
+      {devices === null && !error && <p class="muted">{t.loading}</p>}
+      {devices !== null && devices.length === 0 && <p class="muted">{t.noDevices}</p>}
       {devices?.map((d) => (
         <DeviceCard key={d.uuid} device={d} onEdit={onEdit} onChanged={onChanged} />
       ))}

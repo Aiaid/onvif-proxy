@@ -1,6 +1,7 @@
 import type { ComponentChild } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { apiText, errText } from "../api";
+import { useT } from "../i18n";
 import { AsyncButton } from "./AsyncButton";
 import { Msg } from "./Msg";
 
@@ -16,16 +17,17 @@ interface Props {
 // Both writes go through AsyncButton, so the buttons lock while the request is
 // in flight. Save/validate post the textarea verbatim to PUT /api/config.
 export function ConfigEditor({ refreshToken, onApplied }: Props) {
+  const t = useT();
   const [text, setText] = useState("");
   const [msg, setMsg] = useState<ComponentChild>(null);
 
   const load = async () => {
     try {
-      const t = await apiText("/api/config");
-      setText(t);
+      const cfg = await apiText("/api/config");
+      setText(cfg);
       setMsg(null);
     } catch (e) {
-      setMsg(<Msg kind="bad">加载配置失败: {errText(e)}</Msg>);
+      setMsg(<Msg kind="bad">{t.loadConfigFailed(errText(e))}</Msg>);
     }
   };
 
@@ -34,21 +36,21 @@ export function ConfigEditor({ refreshToken, onApplied }: Props) {
   }, [refreshToken]);
 
   const put = (dryRun: boolean) => async () => {
-    setMsg(<span class="muted">处理中…</span>);
+    setMsg(<span class="muted">{t.processing}</span>);
     try {
       await apiText("/api/config" + (dryRun ? "?dry_run=1" : ""), {
         method: "PUT",
         headers: { "Content-Type": "text/plain" },
         body: text,
       });
-      setMsg(<Msg kind="ok">{dryRun ? "校验通过,未落盘。" : "已保存并热重载。"}</Msg>);
+      setMsg(<Msg kind="ok">{dryRun ? t.validatePassed : t.savedReloaded}</Msg>);
       if (!dryRun) onApplied();
     } catch (e) {
       const detail =
         e && typeof e === "object" && "detail" in e ? (e as { detail: string }).detail : "";
       setMsg(
         <>
-          <Msg kind="bad">配置被拒绝: {errText(e)}</Msg>
+          <Msg kind="bad">{t.configRejected(errText(e))}</Msg>
           {detail && <pre>{detail}</pre>}
         </>,
       );
@@ -57,17 +59,17 @@ export function ConfigEditor({ refreshToken, onApplied }: Props) {
 
   return (
     <div class="card">
-      <p class="muted">config.yaml 全文。开启 Web 认证后才建议在此保存明文摄像头密码。</p>
+      <p class="muted">{t.configNote}</p>
       <textarea spellcheck={false} value={text} onInput={(e) => setText(e.currentTarget.value)} />
       <div class="btns">
-        <AsyncButton onClick={put(true)} busyText="校验中…">
-          校验
+        <AsyncButton onClick={put(true)} busyText={t.busyValidate}>
+          {t.btnValidate}
         </AsyncButton>
-        <AsyncButton className="primary" onClick={put(false)} busyText="保存中…">
-          保存并生效
+        <AsyncButton className="primary" onClick={put(false)} busyText={t.busySave}>
+          {t.btnSaveApply}
         </AsyncButton>
         <button type="button" onClick={() => void load()}>
-          重新加载
+          {t.btnReload}
         </button>
       </div>
       {msg}

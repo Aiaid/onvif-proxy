@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "preact/hooks";
+import { useT } from "../i18n";
 
 interface Props {
   uuid: string;
@@ -10,6 +11,7 @@ interface Props {
 // <img> src on unmount closes the multipart connection, which the server treats
 // as the client disconnecting and kills the backing ffmpeg process.
 export function Preview({ uuid, stream, onClose }: Props) {
+  const t = useT();
   const imgRef = useRef<HTMLImageElement>(null);
   const src =
     "/api/preview?device=" +
@@ -31,9 +33,9 @@ export function Preview({ uuid, stream, onClose }: Props) {
 
   return (
     <div class="overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <img ref={imgRef} src={src} alt="实时预览" />
+      <img ref={imgRef} src={src} alt={t.previewAlt} />
       <button type="button" class="primary" onClick={onClose}>
-        关闭
+        {t.previewClose}
       </button>
     </div>
   );

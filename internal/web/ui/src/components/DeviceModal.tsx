@@ -1,19 +1,31 @@
 import type { ComponentChild } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { apiJSON, errText, jsonBody } from "../api";
+import { useT } from "../i18n";
+import type { Dict } from "../i18n";
 import type { DeviceSpec, DeviceView, RTSPResult, StreamInfo } from "../types";
 import { AsyncButton } from "./AsyncButton";
 import { Msg } from "./Msg";
 
 const SUB_NAMES = ["sub", "mobile", "third", "fourth"];
 
-const RTSP_HINT: Record<string, string> = {
-  dial_timeout: "TCP 连不通,检查 IP 与端口。",
-  auth_failed: "认证失败,检查用户名与密码。",
-  not_found: "路径 404,检查 RTSP 路径。",
-  no_video_track: "未发现视频轨,SDP 中无 video。",
-  protocol_error: "RTSP 协议握手异常。",
-};
+// rtspHint maps a backend err_kind to its localised explanation.
+function rtspHint(t: Dict, kind: string): string {
+  switch (kind) {
+    case "dial_timeout":
+      return t.hintDialTimeout;
+    case "auth_failed":
+      return t.hintAuthFailed;
+    case "not_found":
+      return t.hintNotFound;
+    case "no_video_track":
+      return t.hintNoVideoTrack;
+    case "protocol_error":
+      return t.hintProtocolError;
+    default:
+      return t.rtspProbeFailed;
+  }
+}
 
 interface StreamRow {
   id: number;
@@ -72,6 +84,7 @@ interface Props {
 // probe route through AsyncButton, so the form cannot be double-submitted and
 // each button disables while its request runs.
 export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
+  const t = useT();
   const [name, setName] = useState(device?.name ?? "");
   const [soapPort, setSoapPort] = useState(device ? String(device.soap_port) : "");
   const [rtspPort, setRtspPort] = useState(device ? String(device.rtsp_port) : "");
@@ -123,18 +136,17 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
   const probe = (row: StreamRow) => async () => {
     const url = row.rtsp.trim();
     if (!url) {
-      patchRow(row.id, { out: <Msg kind="bad">请先填写 RTSP URL。</Msg> });
+      patchRow(row.id, { out: <Msg kind="bad">{t.fillRtspFirst}</Msg> });
       return;
     }
-    patchRow(row.id, { out: <span class="muted">探测连通性…</span> });
+    patchRow(row.id, { out: <span class="muted">{t.probingConn}</span> });
     try {
       const j = await apiJSON<RTSPResult>("/api/test/rtsp", jsonBody({ url }));
       if (!j.ok) {
-        const hint = RTSP_HINT[j.err_kind] || "探测失败。";
         patchRow(row.id, {
           out: (
             <Msg kind="bad">
-              {hint}
+              {rtspHint(t, j.err_kind)}
               <br />
               <span class="muted">
                 {j.err_kind || ""}: {j.err_detail || ""}
@@ -144,17 +156,13 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
         });
         return;
       }
-      const tracks = (j.tracks || []).map((t) => `${t.type}:${t.codec}`).join(", ");
+      const tracks = (j.tracks || []).map((x) => `${x.type}:${x.codec}`).join(", ");
       patchRow(row.id, {
-        out: (
-          <Msg kind="ok">
-            连通 · 认证 {j.auth} · 延迟 {j.latency_ms}ms · 编码: {tracks || "-"}
-          </Msg>
-        ),
+        out: <Msg kind="ok">{t.rtspOkShort(j.auth, j.latency_ms, tracks || "-")}</Msg>,
       });
       await fillStreamInfo(row.id, url);
     } catch (e) {
-      patchRow(row.id, { out: <Msg kind="bad">请求失败: {errText(e)}</Msg> });
+      patchRow(row.id, { out: <Msg kind="bad">{t.requestFailed(errText(e))}</Msg> });
     }
   };
 
@@ -169,17 +177,21 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
       if (j.bitrate) patch.bitrate = String(j.bitrate);
       patch.out = (
         <Msg kind="ok">
-          已回填: {j.codec || ""} {j.width}×{j.height} @{j.fps}fps
-          {j.bitrate ? ` · 实测码率 ${j.bitrate} kbps` : " · 码率未知,保留手填值"}
+          {t.filledBack(j.codec || "", j.width, j.height, j.fps)}
+          {j.bitrate ? t.bitrateMeasured(j.bitrate) : t.bitrateUnknown}
         </Msg>
       );
       patchRow(id, patch);
     } catch (e) {
-      const info =
-        e && typeof e === "object" && "status" in e && (e as { status: number }).status === 501
-          ? "ffmpeg 不可用,分辨率/帧率请手填。"
-          : "回填失败: " + errText(e);
-      patchRow(id, { out: <Msg kind={info.startsWith("ffmpeg") ? "info" : "bad"}>{info}</Msg> });
+      const noFfmpeg =
+        e && typeof e === "object" && "status" in e && (e as { status: number }).status === 501;
+      patchRow(id, {
+        out: noFfmpeg ? (
+          <Msg kind="info">{t.ffmpegManual}</Msg>
+        ) : (
+          <Msg kind="bad">{t.fillFailed(errText(e))}</Msg>
+        ),
+      });
     }
   };
 
@@ -207,16 +219,16 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
     // Client-side validation: surface every problem at once, in Chinese,
     // before the request is made (the backend still re-validates).
     const problems: string[] = [];
-    if (!spec.name) problems.push("设备名称不能为空");
-    if (spec.soap_port <= 0 || spec.soap_port > 65535) problems.push("SOAP 端口无效");
-    if (spec.rtsp_port <= 0 || spec.rtsp_port > 65535) problems.push("RTSP 端口无效");
+    if (!spec.name) problems.push(t.vNameEmpty);
+    if (spec.soap_port <= 0 || spec.soap_port > 65535) problems.push(t.vSoapPort);
+    if (spec.rtsp_port <= 0 || spec.rtsp_port > 65535) problems.push(t.vRtspPort);
     spec.streams.forEach((s, i) => {
-      const label = `流 ${i + 1}(${s.name || "未命名"})`;
-      if (!/^[a-z0-9_]+$/.test(s.name)) problems.push(`${label}:名称需为小写字母/数字/下划线`);
-      if (!s.rtsp.startsWith("rtsp://")) problems.push(`${label}:RTSP URL 必须以 rtsp:// 开头`);
-      if (s.width <= 0 || s.height <= 0) problems.push(`${label}:宽/高未填 —— 点“探测”自动回填,或手动填写`);
-      if (s.framerate <= 0) problems.push(`${label}:帧率未填`);
-      if (s.bitrate <= 0) problems.push(`${label}:码率未填`);
+      const label = t.streamRowLabel(i + 1, s.name || t.unnamedStream);
+      if (!/^[a-z0-9_]+$/.test(s.name)) problems.push(t.vStreamName(label));
+      if (!s.rtsp.startsWith("rtsp://")) problems.push(t.vStreamRtsp(label));
+      if (s.width <= 0 || s.height <= 0) problems.push(t.vStreamSize(label));
+      if (s.framerate <= 0) problems.push(t.vStreamFps(label));
+      if (s.bitrate <= 0) problems.push(t.vStreamBitrate(label));
     });
     if (problems.length > 0) {
       setMsg(
@@ -229,7 +241,7 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
       return;
     }
 
-    setMsg(<span class="muted">提交中…</span>);
+    setMsg(<span class="muted">{t.busySubmit}</span>);
     try {
       if (mode === "edit" && device) {
         await apiJSON("/api/devices/" + encodeURIComponent(device.uuid), jsonBody(spec, "PUT"));
@@ -243,7 +255,9 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
         e && typeof e === "object" && "detail" in e ? (e as { detail: string }).detail : "";
       setMsg(
         <>
-          <Msg kind="bad">{mode === "edit" ? "保存失败" : "添加失败"}: {errText(e)}</Msg>
+          <Msg kind="bad">
+            {mode === "edit" ? t.saveFailed : t.addFailed}: {errText(e)}
+          </Msg>
           {detail && <pre>{detail}</pre>}
         </>,
       );
@@ -253,10 +267,10 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
   return (
     <div class="modal" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div class="box">
-        <h3>{mode === "edit" ? "编辑设备" : "新增设备"}</h3>
+        <h3>{mode === "edit" ? t.titleEdit : t.titleAdd}</h3>
         <div class="field">
-          <label>设备名称</label>
-          <input value={name} placeholder="车库摄像头" onInput={(e) => setName(e.currentTarget.value)} />
+          <label>{t.fieldDeviceName}</label>
+          <input value={name} placeholder={t.phDeviceName} onInput={(e) => setName(e.currentTarget.value)} />
         </div>
 
         <div>
@@ -264,41 +278,41 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
             <div class="stream-row" key={row.id}>
               <div class="top">
                 <div class="field">
-                  <label>名称</label>
+                  <label>{t.fieldStreamName}</label>
                   <input value={row.name} onInput={(e) => patchRow(row.id, { name: e.currentTarget.value })} />
                 </div>
                 <div class="field" style="flex:3">
-                  <label>RTSP URL</label>
+                  <label>{t.fieldRtspUrl}</label>
                   <input
                     value={row.rtsp}
-                    placeholder="rtsp://user:pass@host:554/path"
+                    placeholder={t.phRtspUrl}
                     onInput={(e) => patchRow(row.id, { rtsp: e.currentTarget.value })}
                   />
                 </div>
-                <AsyncButton onClick={probe(row)} busyText="探测中…">
-                  探测
+                <AsyncButton onClick={probe(row)} busyText={t.busyProbing}>
+                  {t.btnProbe}
                 </AsyncButton>
                 {idx !== 0 && (
                   <button type="button" class="danger" onClick={() => removeStream(row.id)}>
-                    移除
+                    {t.btnRemove}
                   </button>
                 )}
               </div>
               <div class="grid4">
                 <div class="field">
-                  <label>宽</label>
+                  <label>{t.fieldWidth}</label>
                   <input type="number" value={row.width} onInput={(e) => patchRow(row.id, { width: e.currentTarget.value })} />
                 </div>
                 <div class="field">
-                  <label>高</label>
+                  <label>{t.fieldHeight}</label>
                   <input type="number" value={row.height} onInput={(e) => patchRow(row.id, { height: e.currentTarget.value })} />
                 </div>
                 <div class="field">
-                  <label>帧率</label>
+                  <label>{t.fieldFramerate}</label>
                   <input type="number" value={row.framerate} onInput={(e) => patchRow(row.id, { framerate: e.currentTarget.value })} />
                 </div>
                 <div class="field">
-                  <label>码率(kbps)</label>
+                  <label>{t.fieldBitrate}</label>
                   <input type="number" value={row.bitrate} onInput={(e) => patchRow(row.id, { bitrate: e.currentTarget.value })} />
                 </div>
               </div>
@@ -307,52 +321,46 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
           ))}
         </div>
 
-        <p class="muted">
-          RTSP URL 中的账密(user:pass@)只供本代理抓快照/探测使用,<b>不会</b>下发给 ONVIF 客户端;
-          客户端拉流时由真实摄像头直接认证,所以在 Unifi Protect 等客户端里收编时填的账密必须是<b>摄像头本身的 RTSP 账密</b>。
-        </p>
+        <p class="muted">{t.rtspAuthNote}</p>
         <button type="button" onClick={addStream}>
-          + 添加子码流
+          {t.addSubStream}
         </button>
 
         <div class="inline" style="margin-top:12px">
           <div class="field">
-            <label>SOAP 端口</label>
+            <label>{t.fieldSoapPort}</label>
             <input type="number" value={soapPort} onInput={(e) => setSoapPort(e.currentTarget.value)} />
           </div>
           <div class="field">
-            <label>RTSP 端口</label>
+            <label>{t.fieldRtspPort}</label>
             <input type="number" value={rtspPort} onInput={(e) => setRtspPort(e.currentTarget.value)} />
           </div>
         </div>
 
         <div class="inline">
           <div class="field">
-            <label>ONVIF 用户名(可选)</label>
+            <label>{t.fieldOnvifUser}</label>
             <input value={authUser} onInput={(e) => setAuthUser(e.currentTarget.value)} />
           </div>
           <div class="field">
-            <label>ONVIF 密码(可选)</label>
+            <label>{t.fieldOnvifPass}</label>
             <input
               type="password"
               value={authPass}
-              placeholder={mode === "edit" && device?.auth_user ? "留空 = 保持原密码" : ""}
+              placeholder={mode === "edit" && device?.auth_user ? t.phKeepPass : ""}
               onInput={(e) => setAuthPass(e.currentTarget.value)}
             />
           </div>
         </div>
-        <p class="muted">
-          ONVIF 认证(WSSE)与上面的 RTSP 密码是<b>独立的两层</b>:这里保护的是虚拟设备的 ONVIF 接口。
-          留空 = 不校验(推荐)。若要设置,建议与摄像头 RTSP 账密<b>相同</b>——Unifi Protect 只让填一组账密,并同时用于 ONVIF 与 RTSP 两层。
-        </p>
+        <p class="muted">{t.onvifAuthNote}</p>
 
         {msg}
         <div class="actions">
           <button type="button" onClick={onClose}>
-            取消
+            {t.btnCancel}
           </button>
-          <AsyncButton className="primary" busyText="提交中…" onClick={submit}>
-            {mode === "edit" ? "保存" : "添加"}
+          <AsyncButton className="primary" busyText={t.busySubmit} onClick={submit}>
+            {mode === "edit" ? t.btnSave : t.btnAdd}
           </AsyncButton>
         </div>
       </div>

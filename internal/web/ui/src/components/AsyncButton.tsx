@@ -1,10 +1,12 @@
 import type { ComponentChildren } from "preact";
+import { useT } from "../i18n";
 import { useAsync } from "../useAsync";
 
 interface Props {
   onClick: () => Promise<void>;
   children: ComponentChildren;
-  // Text shown while the action is in flight (defaults to "处理中…").
+  // Text shown while the action is in flight (defaults to the localised
+  // "processing…").
   busyText?: string;
   // Extra class names appended to the base button class.
   className?: string;
@@ -20,8 +22,10 @@ interface Props {
 // action through useAsync (which blocks re-entry), and restores on settle. An
 // optional confirm() gate runs before the lock so a cancelled confirm leaves
 // the button usable.
-export function AsyncButton({ onClick, children, busyText = "处理中…", className = "", confirm, disabled = false, title }: Props) {
+export function AsyncButton({ onClick, children, busyText, className = "", confirm, disabled = false, title }: Props) {
+  const t = useT();
   const { busy, run } = useAsync();
+  const label = busyText ?? t.processing;
 
   const handle = () => {
     if (busy || disabled) return;
@@ -40,7 +44,7 @@ export function AsyncButton({ onClick, children, busyText = "处理中…", clas
     >
       {busy ? (
         <span class="spin-wrap">
-          <span class="spinner" aria-hidden="true" /> {busyText}
+          <span class="spinner" aria-hidden="true" /> {label}
         </span>
       ) : (
         children

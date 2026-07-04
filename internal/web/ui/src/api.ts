@@ -2,6 +2,8 @@
 // handling, non-2xx -> thrown error conversion, and parsing of the server's
 // {"error","detail"} envelope, so no component ever touches fetch directly.
 
+import { tr } from "./i18n";
+
 const DEFAULT_TIMEOUT_MS = 20000;
 
 // ApiError carries the HTTP status plus the server's error/detail envelope so
@@ -24,10 +26,10 @@ async function request(path: string, opts: RequestInit = {}, timeoutMs = DEFAULT
     return await fetch(path, { ...opts, signal: controller.signal });
   } catch (e) {
     if (e instanceof DOMException && e.name === "AbortError") {
-      throw new ApiError(0, "请求超时,请重试。");
+      throw new ApiError(0, tr("requestTimeout"));
     }
     const msg = e instanceof Error ? e.message : String(e);
-    throw new ApiError(0, "网络错误: " + msg);
+    throw new ApiError(0, tr("networkError")(msg));
   } finally {
     clearTimeout(timer);
   }
