@@ -88,10 +88,12 @@ services:
 - 升级 = 换镜像重启;uuid/mac 持久化保证客户端不会把设备认成新机器;
 - 备份 = 备份该 YAML 一个文件。
 
-## 5. CI/CD(GitHub Actions,后续)
+## 5. CI/CD(GitHub Actions,已实现:`.github/workflows/docker-publish.yml`)
 
-1. `push tag v*` → `go test ./...` + `go vet` → buildx 双架构 → 推 GHCR `latest` + 版本 tag;
-2. PR → test + vet + `golangci-lint`。
+- **PR** → `go vet` + `go test -race`(只测不构建);
+- **push main / tag v\* / 手动** → test → amd64 + arm64 **原生 runner** 并行构建(push-by-digest 到 GHCR,gha 缓存)→ merge job 合并 manifest list;
+- 镜像目标:`ghcr.io/aiaid/onvif-proxy`(`GITHUB_TOKEN`,永远可用);仓库配置了 `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets 时,同一组 tag 自动镜像到 Docker Hub `<user>/onvif-proxy`(imagetools 跨仓库复制 blob,无需二次构建);
+- tag 规则:分支名、`v*` 版本(+semver)、短 sha、main 上的 `latest`;`VERSION` build-arg 注入二进制(tag 名或短 sha)。
 
 ## 6. 裸机运行(不走 Docker)
 

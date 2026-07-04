@@ -2,6 +2,8 @@
 
 [English](README.md) | **简体中文**
 
+[![build-and-push](https://github.com/Aiaid/onvif-proxy/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/Aiaid/onvif-proxy/actions/workflows/docker-publish.yml)
+
 用 Go 编写的 **RTSP → ONVIF 虚拟摄像机代理**。把任意已有的 RTSP 流(IP 摄像头、NVR 通道、树莓派、ffmpeg 推流等)包装成符合 ONVIF Profile S 规范的虚拟设备,供 Unifi Protect、群晖 Surveillance Station、Frigate 等 ONVIF 客户端自动发现和收编。
 
 > **为什么再造一个轮子?** 现有的 [daniela-hase/onvif-server](https://github.com/daniela-hase/onvif-server) 及其 fork [p10tyr/rtsp-to-onvif](https://github.com/p10tyr/rtsp-to-onvif) 基于 Node.js `soap` 库 + WSDL 实现,凡未显式注册的方法都会抛出格式不规范的裸 HTTP 500(实测 `GetCapabilities`、`GetScopes`、`GetNetworkInterfaces` 均会 500),导致部分客户端判定设备不兼容。本项目用 Go 从零重写,完整实现必选方法集与标准 Fault 语义,并内置 Web UI 用于配置和测试。
