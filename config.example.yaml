@@ -1,0 +1,54 @@
+# onvif-proxy example configuration.
+# Copy to config.yaml and edit. Full field reference: docs/03-config.md
+# NOTE: the program rewrites this file to persist generated uuid/mac;
+#       comments are not preserved after a rewrite.
+
+server:
+  # IP advertised in WS-Discovery XAddrs and stream URIs. Empty = auto-detect.
+  advertise_ip: ""
+  discovery: true
+
+web:
+  enabled: true
+  port: 8080
+  # HTTP Basic auth for the web UI. Empty = no auth.
+  username: ""
+  password: ""
+
+devices:
+  - name: "Garage Camera"
+    # uuid / mac / serial are generated and written back when left empty.
+    uuid: ""
+    mac: ""
+    serial: ""
+    ports:
+      soap: 8081   # ONVIF SOAP endpoint (+ /onvif/snapshot)
+      rtsp: 8554   # RTSP passthrough proxy
+    info:
+      manufacturer: "OnvifProxy"
+      model: "VirtualCam"
+      firmware: "1.0.0"
+    # Uncomment to require WSSE auth on the ONVIF endpoints:
+    # auth:
+    #   username: "admin"
+    #   password: "secret"
+    streams:
+      # One ONVIF profile per stream, any number of streams (first = primary).
+      - name: main
+        rtsp: "rtsp://user:pass@192.168.1.50:554/h264/ch1/main/av_stream"
+        width: 2560
+        height: 1440
+        framerate: 25
+        bitrate: 4096
+      - name: sub
+        rtsp: "rtsp://user:pass@192.168.1.50:554/h264/ch1/sub/av_stream"
+        width: 640
+        height: 360
+        framerate: 15
+        bitrate: 512
+    snapshot:
+      # Set url to pass through the camera's own HTTP snapshot endpoint;
+      # leave empty to grab frames with ffmpeg from `stream` (default: main).
+      url: ""
+      stream: "sub"
+      cache_seconds: 10
