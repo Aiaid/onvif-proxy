@@ -188,6 +188,40 @@ func (d *Device) ProxyBindings() []ProxyBinding {
 
 // ---- Load / Parse / Save --------------------------------------------------
 
+// DefaultYAML is the starter config written when none exists yet.
+const DefaultYAML = `# onvif-proxy configuration (auto-generated).
+# Add virtual devices below or through the web UI config editor.
+# Full field reference: docs/03-config.md
+
+server:
+  # IP advertised in WS-Discovery and stream URIs. Empty = auto-detect.
+  advertise_ip: ""
+  discovery: true
+
+web:
+  enabled: true
+  port: 8080
+  # HTTP Basic auth for the web UI. Empty = no auth.
+  username: ""
+  password: ""
+
+devices: []
+`
+
+// WriteDefault creates a starter config at path. It never overwrites: the
+// file is created with O_EXCL and an error is returned if it already exists.
+func WriteDefault(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(DefaultYAML); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
+}
+
 // Load reads, validates and default-fills the config. Generated identity
 // fields (uuid/mac/serial) are persisted back to the same file.
 func Load(path string) (*Config, error) {

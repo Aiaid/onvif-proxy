@@ -123,6 +123,6 @@ devices:
 
 ## 3. 生成配置的途径
 
-1. **Web UI**:表单新增设备 → 填 RTSP URL → "测试连接"自动探测编码/分辨率回填 → 保存;
-2. **CLI**:`onvif-proxy -create-config` 交互式生成(对齐上游的 `--create-config` 体验);
+1. **零配置启动(已实现)**:config 文件不存在时自动生成一份默认配置(web 开启、devices 为空),然后通过 Web UI 添加设备;
+2. **Web UI**:表单新增设备 → 填 RTSP URL → "测试连接"自动探测编码/分辨率回填 → 保存;
 3. 手写 YAML(照抄 `config.example.yaml`)。

@@ -35,6 +35,13 @@ func main() {
 		return
 	}
 
+	if _, err := os.Stat(*configPath); os.IsNotExist(err) {
+		if err := config.WriteDefault(*configPath); err != nil {
+			log.Fatalf("generate default config: %v", err)
+		}
+		log.Printf("no config found — generated %s, add devices via the web UI", *configPath)
+	}
+
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatalf("load config: %v", err)
