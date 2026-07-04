@@ -202,15 +202,37 @@ export function DeviceModal({ mode, device, onClose, onSaved }: Props) {
       spec.auth = { username: user, password: pass };
     }
 
+    // Client-side validation: surface every problem at once, in Chinese,
+    // before the request is made (the backend still re-validates).
+    const problems: string[] = [];
+    if (!spec.name) problems.push("设备名称不能为空");
+    if (spec.soap_port <= 0 || spec.soap_port > 65535) problems.push("SOAP 端口无效");
+    if (spec.rtsp_port <= 0 || spec.rtsp_port > 65535) problems.push("RTSP 端口无效");
+    spec.streams.forEach((s, i) => {
+      const label = `流 ${i + 1}(${s.name || "未命名"})`;
+      if (!/^[a-z0-9_]+$/.test(s.name)) problems.push(`${label}:名称需为小写字母/数字/下划线`);
+      if (!s.rtsp.startsWith("rtsp://")) problems.push(`${label}:RTSP URL 必须以 rtsp:// 开头`);
+      if (s.width <= 0 || s.height <= 0) problems.push(`${label}:宽/高未填 —— 点“探测”自动回填,或手动填写`);
+      if (s.framerate <= 0) problems.push(`${label}:帧率未填`);
+      if (s.bitrate <= 0) problems.push(`${label}:码率未填`);
+    });
+    if (problems.length > 0) {
+      setMsg(
+        <Msg kind="bad">
+          {problems.map((p) => (
+            <div>{p}</div>
+          ))}
+        </Msg>,
+      );
+      return;
+    }
+
     setMsg(<span class="muted">提交中…</span>);
     try {
       if (mode === "edit" && device) {
-        await apiJSON("/api/devices/" + encodeURIComponent(device.uuid), {
-          method: "PUT",
-          ...jsonBody(spec),
-        });
+        await apiJSON("/api/devices/" + encodeURIComponent(device.uuid), jsonBody(spec, "PUT"));
       } else {
-        await apiJSON("/api/devices", { method: "POST", ...jsonBody(spec) });
+        await apiJSON("/api/devices", jsonBody(spec));
       }
       onSaved();
       onClose();

@@ -71,9 +71,11 @@ export async function apiBlob(path: string, opts: RequestInit = {}): Promise<Blo
   return await r.blob();
 }
 
-// jsonBody builds the headers+body pair for a JSON POST/PUT.
-export function jsonBody(v: unknown): RequestInit {
-  return { headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) };
+// jsonBody builds the method+headers+body triple for a JSON request. The
+// method is part of the return value on purpose: a body-carrying RequestInit
+// without an explicit method silently becomes a GET, which browsers reject.
+export function jsonBody(v: unknown, method: "POST" | "PUT" = "POST"): RequestInit {
+  return { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(v) };
 }
 
 // errText renders any thrown value into a user-facing string.
