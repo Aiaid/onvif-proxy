@@ -175,7 +175,22 @@ func Probe(ctx context.Context, rawURL string) *Result {
 		if resp.status == 401 {
 			res.Status = resp.status
 			res.ErrKind = ErrAuthFailed
-			res.ErrDetail = "authentication rejected"
+			// Surface everything useful for diagnosing a rejected login: which
+			// scheme/algorithm the server demanded and whether credentials were
+			// present at all. Special characters in the URL userinfo must be
+			// percent-encoded, a frequent cause of "wrong password" reports.
+			detail := fmt.Sprintf("authentication rejected (scheme=%s", scheme)
+			if ch.realm != "" {
+				detail += fmt.Sprintf(", realm=%q", ch.realm)
+			}
+			if ch.algorithm != "" && !strings.EqualFold(ch.algorithm, "MD5") {
+				detail += fmt.Sprintf(", algorithm=%s — 本探测器仅支持 MD5", ch.algorithm)
+			}
+			if username == "" {
+				detail += ", URL 未携带账密"
+			}
+			detail += ");密码含 @ : / % # 等特殊字符时需 URL 编码(如 @ 写作 %40)"
+			res.ErrDetail = detail
 			return res
 		}
 	}
