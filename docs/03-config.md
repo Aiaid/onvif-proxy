@@ -41,30 +41,39 @@ devices:
       username: "admin"
       password: "secret"
 
+    # 流列表 → 每条流一个 ONVIF Profile(数量不限,至少 1 条)。
+    # 第一条为主流:VideoSource 分辨率、默认快照源都取自它。
     streams:
-      high:                      # 必填
+      - name: main               # profile token = profile_main;每设备内唯一
         rtsp: "rtsp://user:pass@192.168.1.50:554/h264/ch1/main/av_stream"
         width: 2560
         height: 1440
         framerate: 25
         bitrate: 4096            # kbps,仅用于能力通告
-      low:                       # 可选;省略则只有单 Profile
+      - name: sub
         rtsp: "rtsp://user:pass@192.168.1.50:554/h264/ch1/sub/av_stream"
         width: 640
         height: 360
         framerate: 15
         bitrate: 512
+      - name: mobile             # 第三条、第四条…随意加
+        rtsp: "rtsp://user:pass@192.168.1.50:554/h264/ch1/mobile/av_stream"
+        width: 352
+        height: 288
+        framerate: 10
+        bitrate: 128
 
     snapshot:
-      # 可选。真实摄像头自带 HTTP 快照时填其 URL,代理直接 302/转发;
-      # 留空则用 ffmpeg 从 high 流抓帧。
+      # 可选。真实摄像头自带 HTTP 快照时填其 URL,代理直接转发(透传模式);
+      # 留空则用 ffmpeg 从流中抓帧(默认取第一条流,可用 stream 指定)。
       url: ""
+      stream: ""                 # ffmpeg 抓帧用哪条流,默认 streams[0](主流清晰度最高,但抓帧稍慢;指定 sub 更快)
       cache_seconds: 10
 
   - name: "门口 NVR 通道 3"
     ports: { soap: 8082, rtsp: 8555 }
     streams:
-      high:
+      - name: main
         rtsp: "rtsp://admin:pw@192.168.1.60:554/cam/realmonitor?channel=3&subtype=0"
         width: 1920
         height: 1080
@@ -88,18 +97,21 @@ devices:
 | `name` | ✅ | 非空;进入 scope 时做 URL 编码 |
 | `uuid` / `mac` / `serial` | — | 空则生成后**写回文件**;uuid 须为合法 UUID,mac 须为合法 MAC |
 | `ports.soap` / `ports.rtsp` | ✅ | 1-65535;**全体设备 + web 端口两两不冲突**(校验失败拒绝加载/保存) |
-| `streams.high.rtsp` | ✅ | 必须为 `rtsp://` scheme;可含 userinfo;host、path 解析后用于代理目标与 StreamUri 路径 |
-| `width/height/framerate/bitrate` | ✅(high) | 正整数;仅用于 ONVIF 能力通告,不影响真实流 |
-| `streams.low` | — | 同 high;省略则单 Profile |
+| `streams[]` | ✅ | 至少 1 条;每条 → 一个 ONVIF Profile。`name` 设备内唯一(小写字母数字/下划线,进入 token:`profile_<name>` / `vec_<name>`);第一条为主流 |
+| `streams[].rtsp` | ✅ | 必须为 `rtsp://` scheme;可含 userinfo;host、path 解析后用于代理目标与 StreamUri 路径 |
+| `streams[].width/height/framerate/bitrate` | ✅ | 正整数;仅用于 ONVIF 能力通告,不影响真实流 |
+| `streams[].proxy_port` | — | 该流上游 host:port 与主流不同时**必填**(独立代理监听);相同则省略,共用 `ports.rtsp` |
 | `auth` | — | 提供则 username/password 均非空 |
+| `snapshot.url` | — | 填了走透传模式;`http(s)://` scheme |
+| `snapshot.stream` | — | ffmpeg 抓帧模式下的取帧流名,默认 `streams[0].name` |
 
 ### RTSP URL 的拆解逻辑
 
 `rtsp://user:pass@host:port/path?query` 拆为:
 
 - **代理目标**:`host:port`(TCP 透传的对端);
-- **StreamUri 返回值**:`rtsp://<advertise>:<ports.rtsp>/path?query` —— **凭证不出现在 StreamUri 中**,RTSP 认证由客户端与真实摄像头端到端完成(客户端里录入的摄像头凭证 = 真实摄像头凭证);
-- 高低两条流的 `host:port` 相同则共用同一个代理端口;不同则拒绝(校验错误,要求拆成两台虚拟设备)。
+- **StreamUri 返回值**:`rtsp://<advertise>:<代理端口>/path?query` —— **凭证不出现在 StreamUri 中**,RTSP 认证由客户端与真实摄像头端到端完成(客户端里录入的摄像头凭证 = 真实摄像头凭证);
+- **多流的代理端口分配**:与主流同 `host:port` 的流共用 `ports.rtsp`;上游不同的流必须显式给 `proxy_port`(每个独立上游一个监听端口)。校验器检查所有 (soap/rtsp/proxy_port/web) 端口全局不冲突。
 
 ### 端口规划建议
 

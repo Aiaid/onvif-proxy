@@ -12,15 +12,15 @@ Web 服务默认监听 `:8080`,提供 REST API 与内嵌单页 UI。可选 HTTP 
 |-----------|------|
 | `GET /api/config` | 返回当前 config.yaml 原文(`text/plain`),UI 编辑器直接展示 |
 | `PUT /api/config` | Body = 完整 YAML 文本。流程:解析 → 校验(语法/端口冲突/字段)→ 原子落盘 → 热重载。校验失败返回 400 + 逐条错误,**不落盘** |
-| `GET /api/devices` | 结构化设备列表 + 运行时状态:`{name, uuid, soap_port, rtsp_port, running, endpoints:{device_service, stream_high, stream_low, snapshot}}` |
+| `GET /api/devices` | 结构化设备列表 + 运行时状态:`{name, uuid, soap_port, running, endpoints:{device_service, snapshot, streams:[{name, profile_token, rtsp_uri}]}}`(streams 数组与配置的多 Profile 一一对应) |
 
 ### 1.2 测试工具(对应 UI 测试面板)
 
 | 方法/路径 | 说明 |
 |-----------|------|
 | `POST /api/test/rtsp` | Body `{"url": "rtsp://..."}`。原生 RTSP 探测(OPTIONS + DESCRIBE + Digest/Basic 认证),返回:`{"ok":true, "status":200, "auth":"digest", "server":"...", "tracks":[{"type":"video","codec":"H264","fmtp":"..."}], "latency_ms": 43}`。错误分类:`dial_timeout` / `auth_failed` / `not_found` / `no_video_track` / `protocol_error` |
-| `GET /api/test/snapshot?device=<uuid>&quality=high` | 调 ffmpeg 从真实流抓一帧,返回 `image/jpeg`。失败返回 JSON 错误(含 ffmpeg stderr 摘要) |
-| `GET /api/preview?device=<uuid>&quality=high` | **MJPEG 实时预览**:ffmpeg 拉真实流 → `-f mpjpeg`(缩至 640 宽、5fps、静音)→ `multipart/x-mixed-replace` 推给浏览器,`<img>` 直接播。客户端断开即杀 ffmpeg;每设备并发预览数上限 2 |
+| `GET /api/test/snapshot?device=<uuid>&stream=<name>` | 调 ffmpeg 从指定流抓一帧(`stream` 省略取主流),返回 `image/jpeg`。失败返回 JSON 错误(含 ffmpeg stderr 摘要) |
+| `GET /api/preview?device=<uuid>&stream=<name>` | **MJPEG 实时预览**:ffmpeg 拉指定流 → `-f mpjpeg`(缩至 640 宽、5fps、静音)→ `multipart/x-mixed-replace` 推给浏览器,`<img>` 直接播。客户端断开即杀 ffmpeg;每设备并发预览数上限 2 |
 | `POST /api/test/onvif?device=<uuid>` | **ONVIF 自检**:服务端以 ONVIF 客户端身份调用自己的 SOAP 端点,逐方法返回 `{method, http_status, soap_fault, pass}`。覆盖方法:GetSystemDateAndTime、GetCapabilities、GetServices、GetScopes、GetNetworkInterfaces、GetDeviceInformation、GetProfiles、GetStreamUri、GetSnapshotUri + 一个故意不存在的方法(验证 Fault 规范性) |
 | `GET /api/discovery/log` | 最近 50 条 WS-Discovery 交互(谁在 Probe、回了什么),排查"客户端发现不了设备"用 |
 

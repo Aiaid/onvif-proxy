@@ -99,19 +99,19 @@ Fault 报文结构(SOAP 1.2 §5.4):`Code/Subcode/Reason/Detail` 齐全,`Reason` 
 
 路径 `POST /onvif/media_service`(`GetCapabilities`/`GetServices` 中如实通告)。
 
-数据模型:每设备 1 个 VideoSource(token `src`)、1 个 VideoSourceConfiguration(token `vsc`)、1~2 个 VideoEncoderConfiguration(token `vec_high` / `vec_low`)、1~2 个 Profile(token `profile_high` / `profile_low`,`fixed=true`)。
+数据模型(**多 Profile**,数量由配置的 `streams[]` 决定,N ≥ 1):每设备 1 个 VideoSource(token `src`)、1 个 VideoSourceConfiguration(token `vsc`,全体 Profile 共享)、每条流 1 个 VideoEncoderConfiguration(token `vec_<name>`)、每条流 1 个 Profile(token `profile_<name>`,`fixed=true`)。ONVIF 对同一 VideoSource 挂任意多个 Profile 是规范允许的;Unifi Protect 会取前两个作为高/低流,其他客户端(Frigate、Home Assistant)可任选 Profile。
 
 | 方法 | 实现 | 说明 |
 |------|:---:|------|
-| GetProfiles / GetProfile | ✅ | 高/低码流 Profile;含 VSC + VEC 完整节点 |
+| GetProfiles / GetProfile | ✅ | 每条配置流一个 Profile(N 个);含 VSC + VEC 完整节点 |
 | CreateProfile / DeleteProfile | ✗ | ActionNotSupported(Profile 固定) |
-| GetVideoSources | ✅ | 分辨率/帧率取高码流配置 |
+| GetVideoSources | ✅ | 分辨率/帧率取主流(streams[0])配置 |
 | GetVideoSourceConfigurations / ~Configuration | ✅ | Bounds = 完整画面 |
-| GetVideoEncoderConfigurations / ~Configuration | ✅ | H264(可配 H265 直通声明),分辨率/帧率/码率/GOP 来自配置 |
-| GetVideoEncoderConfigurationOptions | ✅ | 仅列出配置中的分辨率档位(虚拟设备不可真正改编码) |
+| GetVideoEncoderConfigurations / ~Configuration | ✅ | H264(可配 H265 直通声明),分辨率/帧率/码率/GOP 逐流来自配置 |
+| GetVideoEncoderConfigurationOptions | ✅ | 仅列出配置中各流的分辨率档位(虚拟设备不可真正改编码) |
 | SetVideoEncoderConfiguration | ◽ | 接受并忽略(返回空成功;客户端收编流程常会调用) |
-| GetStreamUri | ✅ | `rtsp://<ip>:<rtspProxyPort>/<原始path>`;按 ProfileToken 区分高低流 |
-| GetSnapshotUri | ✅ | `http://<ip>:<soapPort>/onvif/snapshot?token=<profile>` |
+| GetStreamUri | ✅ | `rtsp://<ip>:<该流代理端口>/<原始path>`;按 ProfileToken 找到对应流 |
+| GetSnapshotUri | ✅ | `http://<ip>:<soapPort>/onvif/snapshot?token=<profile>`;后端两种模式:真实摄像头快照 URL 透传,或 ffmpeg 抓帧(带 TTL 缓存),见 03 文档 `snapshot` 节 |
 | GetAudioSources / GetAudioEncoderConfigurations 等音频类 | ◽ | 空列表(合法响应,声明无音频) |
 | GetCompatibleVideoEncoderConfigurations 等 Compatible 类 | ✅ | 返回对应固定配置 |
 | GetOSDs | ◽ | 空列表 |
