@@ -1,0 +1,36 @@
+# onvif-proxy — docker compose examples.
+# Pick ONE network mode; see docs/05-deployment.md for the trade-offs.
+
+services:
+  onvif-proxy:
+    image: ghcr.io/aiaid/onvif-proxy:latest
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./config:/config
+    # --- Mode B: host networking (Linux only; simplest, multicast works) ---
+    network_mode: host
+
+    # --- Mode A: macvlan (own IP/MAC on the LAN; comment out network_mode
+    #     above and uncomment below; align ipv4_address with advertise_ip) ---
+    # networks:
+    #   lan:
+    #     ipv4_address: 192.168.1.99
+
+    # --- Mode C: bridge + manual adoption (Docker Desktop on Mac/Windows;
+    #     discovery unavailable, set server.discovery: false and map ports) ---
+    # ports:
+    #   - "8080:8080"   # web UI
+    #   - "8081:8081"   # device 1 soap
+    #   - "8554:8554"   # device 1 rtsp proxy
+
+# networks:
+#   lan:
+#     driver: macvlan
+#     driver_opts:
+#       parent: eth0
+#     ipam:
+#       config:
+#         - subnet: 192.168.1.0/24
+#           gateway: 192.168.1.1
+#           ip_range: 192.168.1.96/28

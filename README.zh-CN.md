@@ -43,10 +43,12 @@ open http://<host>:8080
 ## 状态
 
 - [x] 设计文档
-- [ ] 核心实现(SOAP 服务、WS-Discovery、RTSP 代理)
-- [ ] Web 后端与 UI
-- [ ] Docker 镜像与 compose
+- [x] 核心实现(SOAP 服务、WS-Discovery、RTSP 代理)
+- [x] Web 后端与 UI
+- [x] Docker 镜像与 compose
 - [ ] Unifi Protect 实机验证
+
+全部包均带单元测试;内置 ONVIF 自检端到端通过(必选方法全部 200,未知方法返回规范的 `ter:ActionNotSupported` Fault)。
 
 ## License
 

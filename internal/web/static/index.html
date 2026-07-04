@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ONVIF Proxy 管理</title>
+<style>
+  :root {
+    --bg: #14171c; --panel: #1e232b; --panel2: #262d38; --line: #313a47;
+    --fg: #e6e9ee; --muted: #8b95a3; --accent: #4c9aff; --ok: #33cc77; --bad: #ff5c5c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--panel);
+    border-bottom: 1px solid var(--line); padding: 10px 18px;
+    display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .stat { color: var(--muted); font-size: 13px; }
+  header .stat b { color: var(--fg); font-weight: 600; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--bad); }
+  main { max-width: 980px; margin: 0 auto; padding: 18px; }
+  h2 { font-size: 15px; border-left: 3px solid var(--accent); padding-left: 8px; margin: 26px 0 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 14px; }
+  .card .name { font-size: 15px; font-weight: 600; }
+  .card .ep { color: var(--muted); font-size: 12.5px; word-break: break-all; margin-top: 3px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .btns { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  button { background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .out { margin-top: 10px; font-size: 13px; }
+  .out img { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; display: block; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 8px; }
+  th, td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; }
+  th { background: var(--panel2); }
+  textarea { width: 100%; min-height: 320px; background: #11151a; color: var(--fg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 10px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; resize: vertical; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #11151a;
+    border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-size: 12.5px; margin: 8px 0 0; }
+  .msg { padding: 8px 10px; border-radius: 6px; margin-top: 8px; font-size: 13px; }
+  .msg.ok { background: rgba(51,204,119,.12); border: 1px solid var(--ok); }
+  .msg.bad { background: rgba(255,92,92,.12); border: 1px solid var(--bad); }
+  .muted { color: var(--muted); }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.8); z-index: 20;
+    display: flex; align-items: center; justify-content: center; flex-direction: column; }
+  .overlay img { max-width: 92vw; max-height: 82vh; border: 1px solid var(--line); border-radius: 6px; }
+  .overlay button { margin-top: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ONVIF Proxy</h1>
+  <span class="stat">版本 <b id="s-version">…</b></span>
+  <span class="stat">ffmpeg <b id="s-ffmpeg">…</b></span>
+  <span class="stat">advertise_ip <b id="s-ip">…</b></span>
+</header>
+
+<main>
+  <h2>设备</h2>
+  <div id="devices"><p class="muted">加载中…</p></div>
+
+  <h2>配置</h2>
+  <div class="card">
+    <p class="muted" id="cfg-hint">config.yaml 全文。开启 Web 认证后才建议在此保存明文摄像头密码。</p>
+    <textarea id="cfg" spellcheck="false"></textarea>
+    <div class="btns">
+      <button id="cfg-validate">校验</button>
+      <button id="cfg-save" class="primary">保存并生效</button>
+      <button id="cfg-reload">重新加载</button>
+    </div>
+    <div id="cfg-msg"></div>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r;
+}
+
+async function loadStatus() {
+  try {
+    const r = await api("/api/status");
+    const s = await r.json();
+    $("#s-version").textContent = s.version || "-";
+    $("#s-ffmpeg").textContent = s.ffmpeg ? "可用" : "不可用";
+    $("#s-ip").textContent = s.advertise_ip || "-";
+  } catch (e) { /* ignore transient */ }
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+async function loadDevices() {
+  const box = $("#devices");
+  try {
+    const r = await api("/api/devices");
+    const list = await r.json();
+    if (!list || list.length === 0) { box.innerHTML = '<p class="muted">暂无设备。</p>'; return; }
+    box.innerHTML = "";
+    for (const d of list) {
+      const el = document.createElement("div");
+      el.className = "card";
+      const primary = d.endpoints.streams[0] || {};
+      el.innerHTML =
+        '<div class="name">' + esc(d.name) +
+          ' <span class="dot ' + (d.running ? "on" : "off") + '"></span>' +
+          '<span class="muted" style="font-size:12px">' + (d.running ? "运行中" : "未运行") + '</span></div>' +
+        '<div class="ep">ONVIF: ' + esc(d.endpoints.device_service) + '</div>' +
+        '<div class="ep">RTSP: ' + esc(primary.rtsp_uri || "") + '</div>' +
+        '<div class="btns">' +
+          '<button data-act="rtsp">测试连接</button>' +
+          '<button data-act="snap">快照</button>' +
+          '<button data-act="preview">预览</button>' +
+          '<button data-act="onvif">ONVIF 自检</button>' +
+        '</div>' +
+        '<div class="out"></div>';
+      const out = el.querySelector(".out");
+      el.querySelector('[data-act="rtsp"]').onclick = () => testRTSP(d, primary, out);
+      el.querySelector('[data-act="snap"]').onclick = () => snapshot(d, primary, out);
+      el.querySelector('[data-act="preview"]').onclick = () => preview(d, primary);
+      el.querySelector('[data-act="onvif"]').onclick = () => onvifTest(d, out);
+      box.appendChild(el);
+    }
+  } catch (e) {
+    box.innerHTML = '<p class="msg bad">加载设备失败: ' + esc(e.message) + '</p>';
+  }
+}
+
+const RTSP_HINT = {
+  dial_timeout: "TCP 连不通,检查 IP 与端口。",
+  auth_failed: "认证失败,检查用户名与密码。",
+  not_found: "路径 404,检查 RTSP 路径。",
+  no_video_track: "未发现视频轨,SDP 中无 video。",
+  protocol_error: "RTSP 协议握手异常。",
+};
+
+async function testRTSP(d, stream, out) {
+  out.innerHTML = '<span class="muted">探测中…</span>';
+  try {
+    const r = await api("/api/test/rtsp", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: stream.rtsp_uri }),
+    });
+    const j = await r.json();
+    if (r.status !== 200) { out.innerHTML = '<div class="msg bad">' + esc(j.error || "错误") + '<br>' + esc(j.detail || "") + '</div>'; return; }
+    if (j.ok) {
+      const tracks = (j.tracks || []).map((t) => t.type + ":" + t.codec).join(", ");
+      out.innerHTML = '<div class="msg ok">连通 · 状态 ' + esc(j.status) +
+        ' · 认证 ' + esc(j.auth) + ' · 延迟 ' + esc(j.latency_ms) + 'ms<br>编码: ' + esc(tracks || "-") +
+        ' · Server: ' + esc(j.server || "-") + '</div>';
+    } else {
+      const hint = RTSP_HINT[j.err_kind] || "探测失败。";
+      out.innerHTML = '<div class="msg bad">' + esc(hint) + '<br><span class="muted">' +
+        esc(j.err_kind || "") + ': ' + esc(j.err_detail || "") + '</span></div>';
+    }
+  } catch (e) { out.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>'; }
+}
+
+async function snapshot(d, stream, out) {
+  out.innerHTML = '<span class="muted">抓取快照…</span>';
+  try {
+    const url = "/api/test/snapshot?device=" + encodeURIComponent(d.uuid) +
+      "&stream=" + encodeURIComponent(stream.name || "");
+    const r = await api(url);
+    if (!r.ok) { const j = await r.json(); out.innerHTML = '<div class="msg bad">' + esc(j.error) + '<br><span class="muted">' + esc(j.detail || "") + '</span></div>'; return; }
+    const blob = await r.blob();
+    out.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(blob);
+    out.appendChild(img);
+  } catch (e) { out.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>'; }
+}
+
+function preview(d, stream) {
+  const ov = document.createElement("div");
+  ov.className = "overlay";
+  const img = document.createElement("img");
+  img.src = "/api/preview?device=" + encodeURIComponent(d.uuid) +
+    "&stream=" + encodeURIComponent(stream.name || "");
+  const close = document.createElement("button");
+  close.className = "primary";
+  close.textContent = "关闭";
+  const done = () => { img.src = ""; ov.remove(); };
+  close.onclick = done;
+  ov.onclick = (e) => { if (e.target === ov) done(); };
+  ov.appendChild(img);
+  ov.appendChild(close);
+  document.body.appendChild(ov);
+}
+
+async function onvifTest(d, out) {
+  out.innerHTML = '<span class="muted">自检中…</span>';
+  try {
+    const r = await api("/api/test/onvif?device=" + encodeURIComponent(d.uuid), { method: "POST" });
+    const rows = await r.json();
+    let html = '<table><tr><th>方法</th><th>HTTP</th><th>Fault</th><th>结果</th></tr>';
+    for (const c of rows) {
+      html += '<tr><td>' + esc(c.method) + '</td><td>' + esc(c.http_status) + '</td><td>' +
+        esc(c.soap_fault || "-") + '</td><td>' + (c.pass ? "✅" : "❌") + '</td></tr>';
+    }
+    html += '</table>';
+    out.innerHTML = html;
+  } catch (e) { out.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>'; }
+}
+
+async function loadConfig() {
+  try {
+    const r = await api("/api/config");
+    $("#cfg").value = await r.text();
+    $("#cfg-msg").innerHTML = "";
+  } catch (e) { $("#cfg-msg").innerHTML = '<div class="msg bad">加载配置失败: ' + esc(e.message) + '</div>'; }
+}
+
+async function putConfig(dryRun) {
+  const msg = $("#cfg-msg");
+  msg.innerHTML = '<span class="muted">处理中…</span>';
+  try {
+    const r = await api("/api/config" + (dryRun ? "?dry_run=1" : ""), {
+      method: "PUT", headers: { "Content-Type": "text/plain" }, body: $("#cfg").value,
+    });
+    if (r.ok) {
+      msg.innerHTML = '<div class="msg ok">' + (dryRun ? "校验通过,未落盘。" : "已保存并热重载。") + '</div>';
+      if (!dryRun) { loadDevices(); loadStatus(); }
+    } else {
+      const j = await r.json();
+      msg.innerHTML = '<div class="msg bad">' + esc(j.error || "配置被拒绝") + '</div><pre>' + esc(j.detail || "") + '</pre>';
+    }
+  } catch (e) { msg.innerHTML = '<div class="msg bad">请求失败: ' + esc(e.message) + '</div>'; }
+}
+
+$("#cfg-validate").onclick = () => putConfig(true);
+$("#cfg-save").onclick = () => putConfig(false);
+$("#cfg-reload").onclick = loadConfig;
+
+loadStatus();
+loadDevices();
+loadConfig();
+setInterval(loadStatus, 15000);
+setInterval(loadDevices, 15000);
+</script>
+</body>
+</html>

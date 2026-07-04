@@ -45,10 +45,14 @@ open http://<host>:8080
 ## Status
 
 - [x] Design documents
-- [ ] Core implementation (SOAP services, WS-Discovery, RTSP proxy)
-- [ ] Web backend and UI
-- [ ] Docker image and compose
+- [x] Core implementation (SOAP services, WS-Discovery, RTSP proxy)
+- [x] Web backend and UI
+- [x] Docker image and compose
 - [ ] Verification against Unifi Protect
+
+All packages have unit tests; the built-in ONVIF self-test passes end-to-end
+(every mandatory method returns 200, unknown methods return a proper
+`ter:ActionNotSupported` fault).
 
 ## License
 
