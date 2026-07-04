@@ -52,6 +52,8 @@ open http://<host>:8080
 
 首次运行**无需准备配置文件** —— 会自动生成 `./config/config.yaml`,设备完全可以通过 Web UI 添加("➕ 新增设备"表单会探测你的 RTSP URL 并自动回填分辨率/帧率)。macvlan(每个代理独立 IP/MAC,Unifi Protect 体验最佳)或 bridge 模式(Docker Desktop)见 [docs/05-deployment.md](docs/05-deployment.md) 与 [compose.yaml](compose.yaml)。
 
+全局配置也支持环境变量覆盖(`-e ONVIF_WEB_USERNAME=admin -e ONVIF_WEB_PASSWORD=…` 给 Web UI 配 Basic 认证,另有 `ONVIF_ADVERTISE_IP`、`ONVIF_DISCOVERY`、`ONVIF_WEB_ENABLED`、`ONVIF_WEB_PORT`)。env 优先于 YAML,仅内存生效,绝不写回挂载的配置文件 —— 详见 [docs/03-config.md](docs/03-config.md) 第 3 节。
+
 ## 认证模型(RTSP 与 ONVIF 两层)
 
 存在**互相独立的两层凭证**,这是最容易混淆的点:

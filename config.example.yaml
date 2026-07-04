@@ -2,6 +2,10 @@
 # Copy to config.yaml and edit. Full field reference: docs/03-config.md
 # NOTE: the program rewrites this file to persist generated uuid/mac;
 #       comments are not preserved after a rewrite.
+# The server/web globals below can be overridden at runtime via env vars
+# (ONVIF_ADVERTISE_IP, ONVIF_DISCOVERY, ONVIF_WEB_ENABLED, ONVIF_WEB_PORT,
+#  ONVIF_WEB_USERNAME, ONVIF_WEB_PASSWORD). Env beats YAML, in-memory only,
+#  never written back. See docs/03-config.md §3.
 
 server:
   # IP advertised in WS-Discovery XAddrs and stream URIs. Empty = auto-detect.

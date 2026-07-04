@@ -11,6 +11,7 @@ type Config struct { Server ServerConfig; Web WebConfig; Devices []*Device }
 func Load(path string) (*Config, error)          // 读+校验+生成 uuid/mac 并写回
 func Parse(data []byte) (*Config, error)         // 严格解析+校验(dry-run 用)
 func Save(path string, cfg *Config) error        // 原子写
+func ApplyEnvOverrides(cfg *Config) ([]string, error) // ONVIF_* env 覆盖(仅内存,覆盖后重校验);返回已应用项供日志
 func DetectAdvertiseIP() string
 
 type Device struct { Name, UUID, MAC, Serial string; Ports Ports; Info Info;

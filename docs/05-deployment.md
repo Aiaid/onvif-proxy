@@ -25,6 +25,10 @@ ENTRYPOINT ["onvif-proxy", "-config", "/config/config.yaml"]
 
 多架构:`linux/amd64` + `linux/arm64`(树莓派/NAS),用 `docker buildx` + GitHub Actions 发布到 GHCR。
 
+### 环境变量
+
+全局字段支持 env 覆盖(env > yaml,仅内存生效、不写回挂载的 config.yaml;完整语义见 `docs/03-config.md` 第 3 节):`ONVIF_ADVERTISE_IP`、`ONVIF_DISCOVERY`、`ONVIF_WEB_ENABLED`、`ONVIF_WEB_PORT`、`ONVIF_WEB_USERNAME`、`ONVIF_WEB_PASSWORD`,以及 `CONFIG`(配置文件路径)。典型用途:compose 里直接给 Web UI 配 Basic 认证、bridge 模式下指定宿主机 IP,而不必预先手写 config.yaml。
+
 ## 2. 网络模式选择(关键)
 
 WS-Discovery 依赖 UDP 组播,普通 bridge 网络出不去。三种模式按推荐排序:
@@ -69,6 +73,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./config:/config
+    environment:                         # 可选:env 覆盖全局配置(见 docs/03 §3)
+      ONVIF_WEB_USERNAME: admin
+      ONVIF_WEB_PASSWORD: ${WEB_PASSWORD}
 ```
 
 组播可用;所有端口直接占宿主机,注意规划避免冲突。

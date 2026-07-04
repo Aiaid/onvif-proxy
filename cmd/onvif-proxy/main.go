@@ -46,6 +46,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	overrides, err := config.ApplyEnvOverrides(cfg)
+	for _, o := range overrides {
+		log.Printf("config: %s", o)
+	}
+	if err != nil {
+		log.Fatalf("env overrides: %v", err)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -216,6 +223,11 @@ func (m *manager) ApplyConfig(raw []byte, dryRun bool) error {
 	}
 	cfg, err = config.Load(m.configPath)
 	if err != nil {
+		return err
+	}
+	// Same env layer as startup, so a reload cannot silently drop overrides
+	// (e.g. a device edit claiming the env-overridden web port surfaces here).
+	if _, err := config.ApplyEnvOverrides(cfg); err != nil {
 		return err
 	}
 

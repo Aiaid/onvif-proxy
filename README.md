@@ -54,6 +54,8 @@ open http://<host>:8080
 
 No config file needed for the first run — a default one is generated under `./config/config.yaml`, and devices can be added entirely through the web UI ("➕ 新增设备" form probes your RTSP URL and autofills resolution/fps). For macvlan (own IP/MAC per proxy, best Unifi Protect experience) or bridge mode (Docker Desktop), see [docs/05-deployment.md](docs/05-deployment.md) and [compose.yaml](compose.yaml).
 
+Global settings can also be overridden via environment variables (`-e ONVIF_WEB_USERNAME=admin -e ONVIF_WEB_PASSWORD=…` for web UI Basic auth, plus `ONVIF_ADVERTISE_IP`, `ONVIF_DISCOVERY`, `ONVIF_WEB_ENABLED`, `ONVIF_WEB_PORT`). Env beats YAML, applies in memory only, and is never written back to the mounted config file — see [docs/03-config.md](docs/03-config.md) §3.
+
 ## Authentication model (RTSP vs ONVIF)
 
 There are **two independent credential layers** — a frequent point of confusion:

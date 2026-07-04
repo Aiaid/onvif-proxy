@@ -1,6 +1,6 @@
 # 03 · 配置文件格式
 
-配置文件为 YAML,默认路径 `./config.yaml`(可用 `-config` 参数或 `CONFIG` 环境变量覆盖)。Web UI 的修改经校验后**原子写回**同一文件;程序自动生成的持久化字段(uuid、mac)也会写回。
+配置文件为 YAML,默认路径 `./config.yaml`(可用 `-config` 参数或 `CONFIG` 环境变量覆盖)。Web UI 的修改经校验后**原子写回**同一文件;程序自动生成的持久化字段(uuid、mac)也会写回。少量全局字段支持环境变量运行时覆盖(见第 3 节),便于 Docker 部署时免挂载改配置。
 
 ## 1. 完整示例
 
@@ -121,7 +121,29 @@ devices:
 | 设备 soap | 8081、8082、… |
 | 设备 rtsp | 8554、8555、… |
 
-## 3. 生成配置的途径
+## 3. 环境变量覆盖
+
+面向 Docker/compose 场景:`server` 与 `web` 两段的全局字段可用环境变量覆盖,不必往挂载卷里预写敏感信息。
+
+| 环境变量 | 覆盖字段 | 取值 |
+|------|------|------|
+| `CONFIG` | 配置文件路径(等价 `-config` 参数) | 路径 |
+| `ONVIF_ADVERTISE_IP` | `server.advertise_ip` | IP 字符串 |
+| `ONVIF_DISCOVERY` | `server.discovery` | `true` / `false` |
+| `ONVIF_WEB_ENABLED` | `web.enabled` | `true` / `false` |
+| `ONVIF_WEB_PORT` | `web.port` | 1-65535 |
+| `ONVIF_WEB_USERNAME` | `web.username` | 字符串 |
+| `ONVIF_WEB_PASSWORD` | `web.password` | 字符串 |
+
+语义:
+
+- **优先级 env > yaml**;仅在进程内存中生效,**绝不写回** config.yaml——Web UI 的设备增删改、配置整文保存都从文件原文出发,env 值不会被固化进挂载的配置文件;
+- 未设置或值为空串 = 不覆盖(沿用 yaml 值/默认值);
+- 覆盖后重新执行完整校验(端口全局不冲突、username/password 必须成对),取值非法或校验失败则**启动失败**并打印原因;
+- Basic 认证的启用条件不变:生效的 `username` 非空才启用。因此 yaml 中 username 为空时只设 `ONVIF_WEB_PASSWORD` 会因成对约束校验失败,需同时给 `ONVIF_WEB_USERNAME`;
+- 设备列表(`devices`)不支持 env 覆盖——按台配置请用挂载的 config.yaml 或 Web UI。
+
+## 4. 生成配置的途径
 
 1. **零配置启动(已实现)**:config 文件不存在时自动生成一份默认配置(web 开启、devices 为空),然后通过 Web UI 添加设备;
 2. **Web UI(已实现)**:"➕ 新增设备"表单 → 填主流/子码流 RTSP URL → "探测"按钮先测连通性再自动回填编码/分辨率/帧率 → 填名称与端口(默认建议下一空闲端口对)、可选 ONVIF 认证 → "添加"经 `POST /api/devices` 合入 YAML 并热重载;设备卡片"删除"按钮经 `DELETE /api/devices/{uuid}` 移除;
