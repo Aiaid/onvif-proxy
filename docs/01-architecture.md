@@ -117,7 +117,8 @@ onvif-proxy/
 |------|------|------|
 | SOAP 实现 | **手写 XML 模板**,不用 WSDL 代码生成 | ONVIF WSDL 生成的 Go 代码庞大且难控;上游项目的 500 问题正源于 soap 库对未注册方法的粗暴处理。手写模板可逐字节对照真实摄像头报文,且 Fault 语义完全可控 |
 | XML 解析 | 标准库 `encoding/xml`(token 流式) | 只需提取 Body 首个子元素名 + 少量参数 + WSSE 头,无需完整反序列化 |
-| 配置 | `gopkg.in/yaml.v3` | 唯一第三方依赖;支持注释保留场景可后续评估 |
+| 配置 | `gopkg.in/yaml.v3` | 核心路径唯一第三方依赖;支持注释保留场景可后续评估 |
+| MCP 端点 | 官方 `github.com/modelcontextprotocol/go-sdk` | 依赖最小化约束的唯一例外(见 docs/07):MCP 协议面(生命周期/会话/SSE/版本协商)由官方库长期跟进,自造收益低;仅 `internal/web` 的 `/mcp` 路由使用 |
 | UUID/MAC | `crypto/rand` 自生成(RFC 4122 v4 / 本地管理 MAC) | 免依赖;首次生成后写回 YAML 持久化,保证客户端眼中设备身份稳定 |
 | 快照/预览 | 外部 ffmpeg 进程 | 拉流解码自实现成本过高;ffmpeg 在 Docker 镜像内置,宿主机跑则要求 PATH 中存在 |
 | RTSP 探测 | **原生实现**(不走 ffmpeg) | UI"测试连接"需要精确区分错误类别(TCP 不通 / 401 认证失败 / 404 路径错 / SDP 无视频轨),ffmpeg 的报错不可编程解析 |

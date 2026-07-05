@@ -17,7 +17,8 @@ An **RTSP → ONVIF virtual camera proxy** written in Go. It wraps any existing 
 - **Zero-transcode RTSP proxy** — a per-device TCP passthrough proxy forwards the stream bytes untouched to the real camera; no decoding, no CPU cost. ffmpeg is only used for snapshots and UI previews.
 - **Web UI** — besides the YAML config file, a small embedded web backend lets you edit the config online, probe RTSP connectivity (native RTSP client with Digest/Basic auth and SDP parsing), grab snapshots, watch a live MJPEG preview, and run an ONVIF self-test against the virtual device itself.
 - **Docker-first deployment** — multi-stage build with ffmpeg baked in; macvlan compose example so each virtual device can get its own IP/MAC on your LAN.
-- **Single binary, minimal dependencies** — only `gopkg.in/yaml.v3`; SOAP messages are hand-written XML templates, no WSDL code generation.
+- **Single binary, minimal dependencies** — `gopkg.in/yaml.v3` plus the official MCP `go-sdk`; SOAP messages are hand-written XML templates, no WSDL code generation.
+- **MCP server built in** — `/mcp` (Streamable HTTP) exposes device management, RTSP probing, snapshots and the ONVIF self-test as MCP tools for AI clients such as Claude Code (see [docs/07-mcp.md](docs/07-mcp.md)).
 
 ## Documentation
 
@@ -30,6 +31,7 @@ Design docs (currently in Chinese; the code and config schema are English):
 | [docs/03-config.md](docs/03-config.md) | YAML config format and validation rules |
 | [docs/04-web-api.md](docs/04-web-api.md) | Web backend REST API and UI design |
 | [docs/05-deployment.md](docs/05-deployment.md) | Docker / macvlan deployment |
+| [docs/07-mcp.md](docs/07-mcp.md) | Built-in MCP server endpoint (`/mcp`), tool catalog, implementation contract |
 
 ## Quick start (Docker)
 

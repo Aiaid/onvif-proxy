@@ -13,12 +13,13 @@ Go 编写的 RTSP → ONVIF 虚拟设备代理:把任意 RTSP 流包装成 ONVIF
 - `docs/03-config.md` — YAML 配置格式与校验规则
 - `docs/04-web-api.md` — REST API 契约与 UI 设计
 - `docs/05-deployment.md` — Dockerfile、macvlan/host/bridge 三种网络模式
+- `docs/07-mcp.md` — MCP 服务端点(基于官方 go-sdk 的 Streamable HTTP `/mcp`、工具清单、实现契约)
 
 ## 硬性约束
 
 - **规范优先**:任何 SOAP 响应(含错误)必须是格式合法的 SOAP 1.2 报文。未实现方法返回 `ter:ActionNotSupported` Fault,禁止裸 500 —— 这是本项目区别于上游(daniela-hase/onvif-server 及 p10tyr fork)的立项原因。
 - `GetSystemDateAndTime` 永远免认证(ONVIF Core Spec 要求)。
-- 依赖最小化:第三方库仅 `gopkg.in/yaml.v3`;UUID/MAC 用 `crypto/rand` 自造;SOAP 用手写 XML 模板 + `encoding/xml` token 流解析。
+- 依赖最小化:第三方库仅 `gopkg.in/yaml.v3` 与 `github.com/modelcontextprotocol/go-sdk`(后者仅用于 `/mcp` 端点,见 `docs/07-mcp.md`;不得因此引入其他直接依赖);UUID/MAC 用 `crypto/rand` 自造;SOAP 用手写 XML 模板 + `encoding/xml` token 流解析。
 - 视频路径零转码:RTSP 走 TCP 透传;ffmpeg 只用于快照和 UI 预览,且通过 `exec.Command` 参数传递(无 shell)。
 - uuid/mac 首次生成后写回 config.yaml 持久化,保证设备身份稳定。
 

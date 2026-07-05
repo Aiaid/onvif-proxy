@@ -2,7 +2,7 @@
 
 > 本文档是并行开发各包时的**签名契约**。实现必须精确匹配这里的导出签名;若实现中发现契约不合理,改动前先更新本文档。`internal/config` 已实现,其余包以它为地基。
 
-模块路径:`github.com/Aiaid/onvif-proxy`。依赖规则:所有包可 import `internal/config` 与标准库;**禁止新增第三方依赖**(go.mod 只有 yaml.v3);包之间除下述声明外不得互相 import。
+模块路径:`github.com/Aiaid/onvif-proxy`。依赖规则:所有包可 import `internal/config` 与标准库;**禁止新增第三方依赖**(go.mod 直接依赖仅 yaml.v3,唯一例外:`internal/web` 可 import 官方 `github.com/modelcontextprotocol/go-sdk/mcp` 实现 `/mcp` 端点,契约见 `docs/07-mcp.md`);包之间除下述声明外不得互相 import。
 
 ## internal/config(已实现,只读参考)
 

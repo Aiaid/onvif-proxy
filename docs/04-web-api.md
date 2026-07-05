@@ -35,6 +35,12 @@ Web 服务默认监听 `:8080`,提供 REST API 与内嵌单页 UI。可选 HTTP 
 | `GET /api/status` | 版本、启动时长、ffmpeg 是否可用、advertise_ip 探测结果 |
 | `GET /healthz` | liveness,200 即可 |
 
+### 1.4 MCP 端点
+
+`/mcp`(Streamable HTTP,JSON-RPC,非 REST 风格)把管理能力以 MCP 工具暴露给
+AI 客户端;与 REST API 同端口、同 Basic 认证。协议、工具清单与实现契约见
+`docs/07-mcp.md`。
+
 ## 2. UI 页面设计(单页,三个区块)
 
 **技术栈**:Preact + TSX,由 esbuild 打包成 `static/dist/{app.js,app.css}`(提交进仓库,`go:embed` 进二进制,运行时零 Node)。源码在 `internal/web/ui/`,`index.html` 为薄壳(`<div id="app">` + `/dist/app.js`)。开发:`cd internal/web/ui && npm install && npm run check && npm run build`。
