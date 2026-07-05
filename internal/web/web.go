@@ -89,6 +89,9 @@ func New(cfg config.WebConfig, backend Backend) *Server {
 	mux.HandleFunc("POST /api/test/onvif", s.handleTestONVIF)
 	mux.HandleFunc("GET /api/discovery/log", s.handleDiscoveryLog)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
+	// MCP endpoint: the SDK's Streamable HTTP handler owns GET/POST/DELETE
+	// semantics, so it is mounted without a method filter.
+	mux.Handle("/mcp", s.mcpHandler())
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	// Serve the built bundle (dist/app.js, dist/app.css) straight from the
 	// embedded FS; the sub-FS strips the "static/" prefix so /dist/* maps to
@@ -96,7 +99,11 @@ func New(cfg config.WebConfig, backend Backend) *Server {
 	if sub, err := fs.Sub(staticFiles, "static"); err == nil {
 		mux.Handle("GET /dist/", http.FileServerFS(sub))
 	}
-	mux.HandleFunc("GET /", s.handleIndex)
+	// Match the root path exactly ("/{$}"), not as a catch-all subtree: the
+	// unrestricted "/mcp" route above matches all methods, and a bare "GET /"
+	// would overlap it on GET /mcp with neither pattern more specific, which
+	// ServeMux rejects as a conflict. handleIndex only ever served "/" anyway.
+	mux.HandleFunc("GET /{$}", s.handleIndex)
 
 	s.handler = s.withAuth(mux)
 	return s

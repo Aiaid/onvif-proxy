@@ -45,6 +45,12 @@ type deviceView struct {
 
 // handleDevices maps the runtime device snapshot to the docs/04 JSON shape.
 func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.deviceViews())
+}
+
+// deviceViews builds the docs/04 device DTO list from the runtime snapshot,
+// shared by GET /api/devices and the list_devices MCP tool.
+func (s *Server) deviceViews() []deviceView {
 	advertiseIP := s.backend.Status().AdvertiseIP
 	runtimes := s.backend.Devices()
 
@@ -92,33 +98,39 @@ func (s *Server) handleDevices(w http.ResponseWriter, _ *http.Request) {
 			},
 		})
 	}
-	writeJSON(w, http.StatusOK, out)
+	return out
 }
 
 // addDeviceRequest is the JSON body accepted by POST /api/devices. It mirrors a
 // config.Device but leaves identity fields (uuid/mac/serial) to the hot-reload
 // Load, which generates and persists them.
+//
+// Optional fields carry ",omitempty" not for marshaling (the struct is only
+// ever decoded) but because the MCP add/update_device tool schema is inferred
+// from these tags: without it every field would be marked required and a
+// minimal add_device call would be rejected. A blank auth password stays legal
+// for the edit flow's "unchanged" semantics.
 type addDeviceRequest struct {
 	Name     string `json:"name"`
 	SOAPPort int    `json:"soap_port"`
 	RTSPPort int    `json:"rtsp_port"`
 	Auth     *struct {
 		Username string `json:"username"`
-		Password string `json:"password"`
-	} `json:"auth"`
+		Password string `json:"password,omitempty"`
+	} `json:"auth,omitempty"`
 	Streams []struct {
 		Name      string `json:"name"`
 		RTSP      string `json:"rtsp"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-		Framerate int    `json:"framerate"`
-		Bitrate   int    `json:"bitrate"`
+		Width     int    `json:"width,omitempty"`
+		Height    int    `json:"height,omitempty"`
+		Framerate int    `json:"framerate,omitempty"`
+		Bitrate   int    `json:"bitrate,omitempty"`
 	} `json:"streams"`
 	Snapshot *struct {
-		URL          string `json:"url"`
-		Stream       string `json:"stream"`
-		CacheSeconds int    `json:"cache_seconds"`
-	} `json:"snapshot"`
+		URL          string `json:"url,omitempty"`
+		Stream       string `json:"stream,omitempty"`
+		CacheSeconds int    `json:"cache_seconds,omitempty"`
+	} `json:"snapshot,omitempty"`
 }
 
 // handleAddDevice appends a new device to the current config and hot-reloads it.
@@ -276,20 +288,25 @@ func (s *Server) currentConfig() (*config.Config, error) {
 	return config.Parse(raw)
 }
 
-// applyConfig re-marshals cfg (2-space indent, matching config.Save) and hands
-// it to the backend. Validation errors surface as 400 with the full text.
-func (s *Server) applyConfig(w http.ResponseWriter, cfg *config.Config) {
+// applyParsedConfig re-marshals cfg (2-space indent, matching config.Save) and
+// hands it to the backend. Shared by the REST handlers and the MCP device tools;
+// validation errors are returned verbatim for the caller to surface.
+func (s *Server) applyParsedConfig(cfg *config.Config) error {
 	var buf bytes.Buffer
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
 	if err := enc.Encode(cfg); err != nil {
 		enc.Close()
-		writeErr(w, http.StatusInternalServerError, "encode config failed", err.Error())
-		return
+		return err
 	}
 	enc.Close()
+	return s.backend.ApplyConfig(buf.Bytes(), false)
+}
 
-	if err := s.backend.ApplyConfig(buf.Bytes(), false); err != nil {
+// applyConfig runs applyParsedConfig and maps its outcome to the REST response:
+// a re-marshal failure is a 500, a rejected config a 400 with the full text.
+func (s *Server) applyConfig(w http.ResponseWriter, cfg *config.Config) {
+	if err := s.applyParsedConfig(cfg); err != nil {
 		writeErr(w, http.StatusBadRequest, "config rejected", err.Error())
 		return
 	}
