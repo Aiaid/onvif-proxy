@@ -22,7 +22,7 @@ An **RTSP → ONVIF virtual camera proxy** written in Go. It wraps any existing 
 
 ## Documentation
 
-Design docs (currently in Chinese; the code and config schema are English):
+Design docs (bilingual — each has a `.zh-CN.md` counterpart, e.g. [docs/01-architecture.zh-CN.md](docs/01-architecture.zh-CN.md)):
 
 | Doc | Contents |
 |-----|----------|

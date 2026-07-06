@@ -1,88 +1,90 @@
-# 04 · Web 后端 API 与 UI 设计
+# 04 · Web Backend API & UI Design
 
-Web 服务默认监听 `:8080`,提供 REST API 与内嵌单页 UI。可选 HTTP Basic 认证(`web.username/password`)。
+**English** | [简体中文](04-web-api.zh-CN.md)
+
+The web service listens on `:8080` by default, providing a REST API and an embedded single-page UI. Optional HTTP Basic authentication (`web.username/password`).
 
 ## 1. REST API
 
-统一约定:JSON 响应;错误格式 `{"error": "...", "detail": "..."}`;写操作仅 `PUT/POST`。
+General conventions: JSON responses; error format `{"error": "...", "detail": "..."}`; write operations use `PUT`/`POST` only.
 
-### 1.1 配置管理
+### 1.1 Configuration management
 
-| 方法/路径 | 说明 |
+| Method/Path | Description |
 |-----------|------|
-| `GET /api/config` | 返回当前 config.yaml 原文(`text/plain`),UI 编辑器直接展示 |
-| `PUT /api/config` | Body = 完整 YAML 文本。流程:解析 → 校验(语法/端口冲突/字段)→ 原子落盘 → 热重载。校验失败返回 400 + 逐条错误,**不落盘** |
-| `GET /api/devices` | 结构化设备列表 + 运行时状态:`{name, uuid, soap_port, rtsp_port, running, auth_user, endpoints:{device_service, snapshot, streams:[{name, profile_token, rtsp_uri, rtsp, width, height, framerate, bitrate}]}}`(streams 数组与配置的多 Profile 一一对应)。`rtsp_port`/`auth_user` 与每个 stream 的 `rtsp`(上游源 URL,可能含凭证)、`width/height/framerate/bitrate` 是为**编辑表单预填**而补充的字段:源 URL 凭证的暴露口径与 `GET /api/config`(原样返回全文)一致,均由 web Basic 认证把关;ONVIF 密码**不**下发(见下方 PUT 的密码保留语义) |
-| `POST /api/devices` | Body JSON DeviceSpec `{name, soap_port, rtsp_port, auth?, streams:[{name,rtsp,width,height,framerate,bitrate}], snapshot?}`。合入当前 YAML → 校验 → 落盘 → 热重载;uuid/mac/serial 交由加载时生成。校验失败(含端口冲突)返回 400,成功 `{"status":"applied"}` |
-| `PUT /api/devices/{uuid}` | Body 与 POST 相同的 DeviceSpec。按 uuid 定位设备(未知 404)→ 用表单值构建新 Device,**原位替换**,但**保留原 uuid/mac/serial 与 info**(表单不携带这些)→ 校验 → 落盘 → 热重载。成功 `{"status":"applied"}`,校验/端口冲突 400 透传。**ONVIF 密码保留语义**:DTO 只暴露 `auth_user` 不暴露密码,故当 body 携带 `auth.username` 但 `auth.password` 为空时视为"保持原密码不变";清空 username(不带 auth 对象)则移除 ONVIF 认证 |
-| `DELETE /api/devices/{uuid}` | 按 uuid 从当前配置删除设备 → 校验 → 落盘 → 热重载。未知 uuid 返回 404,成功 `{"status":"applied"}` |
+| `GET /api/config` | Returns the raw current config.yaml contents (`text/plain`), displayed directly by the UI editor |
+| `PUT /api/config` | Body = full YAML text. Flow: parse → validate (syntax/port conflicts/fields) → atomic write to disk → hot reload. On validation failure, returns 400 with itemized errors, **nothing is written to disk** |
+| `GET /api/devices` | Structured device list + runtime status: `{name, uuid, soap_port, rtsp_port, running, auth_user, endpoints:{device_service, snapshot, streams:[{name, profile_token, rtsp_uri, rtsp, width, height, framerate, bitrate}]}}` (the `streams` array corresponds one-to-one with the configured multi-profile streams). `rtsp_port`/`auth_user` and each stream's `rtsp` (the upstream source URL, may contain credentials), `width/height/framerate/bitrate` are extra fields added to **pre-fill the edit form**: the exposure policy for source URL credentials matches `GET /api/config` (returns the full text verbatim) — both are gated by web Basic auth; the ONVIF password is **not** sent down (see the password-retention semantics of PUT below) |
+| `POST /api/devices` | Body is a JSON DeviceSpec `{name, soap_port, rtsp_port, auth?, streams:[{name,rtsp,width,height,framerate,bitrate}], snapshot?}`. Merged into the current YAML → validate → write to disk → hot reload; uuid/mac/serial are generated at load time. On validation failure (including port conflicts) returns 400; on success `{"status":"applied"}` |
+| `PUT /api/devices/{uuid}` | Body is the same DeviceSpec as POST. Locates the device by uuid (unknown → 404) → builds a new Device from the form values, **replacing it in place**, but **retains the original uuid/mac/serial and info** (the form does not carry these) → validate → write to disk → hot reload. On success `{"status":"applied"}`, validation/port-conflict errors pass through as 400. **ONVIF password retention semantics**: since the DTO only exposes `auth_user` and never the password, if the body carries `auth.username` but `auth.password` is empty, this is treated as "keep the existing password unchanged"; clearing the username (omitting the `auth` object) removes ONVIF authentication |
+| `DELETE /api/devices/{uuid}` | Deletes the device by uuid from the current config → validate → write to disk → hot reload. Unknown uuid returns 404, success `{"status":"applied"}` |
 
-### 1.2 测试工具(对应 UI 测试面板)
+### 1.2 Test tools (corresponding to the UI test panel)
 
-| 方法/路径 | 说明 |
+| Method/Path | Description |
 |-----------|------|
-| `POST /api/test/rtsp` | Body `{"url": "rtsp://..."}`。原生 RTSP 探测(OPTIONS + DESCRIBE + Digest/Basic 认证),返回:`{"ok":true, "status":200, "auth":"digest", "server":"...", "tracks":[{"type":"video","codec":"H264","fmtp":"..."}], "latency_ms": 43}`。错误分类:`dial_timeout` / `auth_failed` / `not_found` / `no_video_track` / `protocol_error` |
-| `POST /api/test/streaminfo` | Body `{"url": "rtsp://..."}`。ffprobe 探测首个视频流,返回 `{"codec":"h264","width":1920,"height":1080,"fps":25,"bitrate":2048}`,供新增设备表单回填。`bitrate`(kbps):源声明了就用声明值,否则 ffmpeg 拉流 3 秒按实际字节实测;测不出为 0(表单保留手填值)。ffmpeg 不可用返回 501 |
-| `GET /api/test/snapshot?device=<uuid>&stream=<name>` | 调 ffmpeg 从指定流抓一帧(`stream` 省略取主流),返回 `image/jpeg`。失败返回 JSON 错误(含 ffmpeg stderr 摘要) |
-| `GET /api/preview?device=<uuid>&stream=<name>` | **MJPEG 实时预览**:ffmpeg 拉指定流 → `-f mpjpeg`(缩至 640 宽、5fps、静音)→ `multipart/x-mixed-replace` 推给浏览器,`<img>` 直接播。客户端断开即杀 ffmpeg;每设备并发预览数上限 2 |
-| `POST /api/test/onvif?device=<uuid>` | **ONVIF 自检**:服务端以 ONVIF 客户端身份调用自己的 SOAP 端点,逐方法返回 `{method, http_status, soap_fault, pass}`。覆盖方法:GetSystemDateAndTime、GetCapabilities、GetServices、GetScopes、GetNetworkInterfaces、GetDeviceInformation、GetProfiles、GetStreamUri、GetSnapshotUri + 一个故意不存在的方法(验证 Fault 规范性) |
-| `GET /api/discovery/log` | 最近 50 条 WS-Discovery 交互(谁在 Probe、回了什么),排查"客户端发现不了设备"用 |
+| `POST /api/test/rtsp` | Body `{"url": "rtsp://..."}`. Native RTSP probe (OPTIONS + DESCRIBE + Digest/Basic auth), returns: `{"ok":true, "status":200, "auth":"digest", "server":"...", "tracks":[{"type":"video","codec":"H264","fmtp":"..."}], "latency_ms": 43}`. Error categories: `dial_timeout` / `auth_failed` / `not_found` / `no_video_track` / `protocol_error` |
+| `POST /api/test/streaminfo` | Body `{"url": "rtsp://..."}`. Probes the first video stream via ffprobe, returns `{"codec":"h264","width":1920,"height":1080,"fps":25,"bitrate":2048}`, used to pre-fill the add-device form. `bitrate` (kbps): if the source declares it, that value is used; otherwise ffmpeg pulls the stream for 3 seconds and measures the actual byte rate; if it cannot be measured, 0 (the form keeps the manually entered value). Returns 501 if ffmpeg is unavailable |
+| `GET /api/test/snapshot?device=<uuid>&stream=<name>` | Calls ffmpeg to grab one frame from the specified stream (`stream` omitted → main stream), returns `image/jpeg`. On failure returns a JSON error (including an ffmpeg stderr summary) |
+| `GET /api/preview?device=<uuid>&stream=<name>` | **MJPEG live preview**: ffmpeg pulls the specified stream → `-f mpjpeg` (scaled to 640 wide, 5fps, muted) → pushed to the browser as `multipart/x-mixed-replace`, played directly by an `<img>`. Disconnecting the client immediately kills ffmpeg; each device has a cap of 2 concurrent previews |
+| `POST /api/test/onvif?device=<uuid>` | **ONVIF self-check**: the server acts as an ONVIF client calling its own SOAP endpoint, returning `{method, http_status, soap_fault, pass}` per method. Covered methods: GetSystemDateAndTime, GetCapabilities, GetServices, GetScopes, GetNetworkInterfaces, GetDeviceInformation, GetProfiles, GetStreamUri, GetSnapshotUri, plus one deliberately nonexistent method (to verify Fault compliance) |
+| `GET /api/discovery/log` | The most recent 50 WS-Discovery interactions (who sent a Probe, what was returned), used to troubleshoot "client can't discover the device" issues |
 
-### 1.3 系统
+### 1.3 System
 
-| 方法/路径 | 说明 |
+| Method/Path | Description |
 |-----------|------|
-| `GET /api/status` | 版本、启动时长、ffmpeg 是否可用、advertise_ip 探测结果 |
-| `GET /healthz` | liveness,200 即可 |
+| `GET /api/status` | Version, uptime, whether ffmpeg is available, advertise_ip probe result |
+| `GET /healthz` | Liveness check, 200 is sufficient |
 
-### 1.4 MCP 端点
+### 1.4 MCP endpoint
 
-`/mcp`(Streamable HTTP,JSON-RPC,非 REST 风格)把管理能力以 MCP 工具暴露给
-AI 客户端;与 REST API 同端口、同 Basic 认证。协议、工具清单与实现契约见
-`docs/07-mcp.md`。
+`/mcp` (Streamable HTTP, JSON-RPC, non-REST style) exposes management capabilities as MCP
+tools for AI clients; it shares the same port and the same Basic auth as the REST API. See
+`docs/07-mcp.md` for the protocol, tool list, and implementation contract.
 
-## 2. UI 页面设计(单页,三个区块)
+## 2. UI page design (single page, three sections)
 
-**技术栈**:Preact + TSX,由 esbuild 打包成 `static/dist/{app.js,app.css}`(提交进仓库,`go:embed` 进二进制,运行时零 Node)。源码在 `internal/web/ui/`,`index.html` 为薄壳(`<div id="app">` + `/dist/app.js`)。开发:`cd internal/web/ui && npm install && npm run check && npm run build`。
+**Tech stack**: Preact + TSX, bundled by esbuild into `static/dist/{app.js,app.css}` (committed to the repo, embedded into the binary via `go:embed`, zero Node needed at runtime). Source lives in `internal/web/ui/`, `index.html` is a thin shell (`<div id="app">` + `/dist/app.js`). Development: `cd internal/web/ui && npm install && npm run check && npm run build`.
 
-**健壮性约定(全局)**:所有异步操作统一走 `useAsync` + `AsyncButton` 机制 —— 按钮点击后**立即禁用并显示转圈文案**,请求完成/失败后恢复;`useAsync` 内部有再入守卫,天然防双击/防表单重复提交;删除类操作 `confirm()` 通过后按钮即锁。`fetch` 统一封装(`api.ts`):20s 超时(AbortController)、非 2xx 抛 `ApiError`、解析 `{error,detail}` 错误信封。没有裸 `onClick` 异步。
+**Robustness convention (global)**: all async operations go through the unified `useAsync` + `AsyncButton` mechanism — the button **immediately disables and shows a spinner label** on click, and restores once the request completes/fails; `useAsync` has a built-in re-entrancy guard, which naturally prevents double-clicks/duplicate form submits; for delete-type operations, the button locks as soon as `confirm()` is accepted. `fetch` is uniformly wrapped (`api.ts`): 20s timeout (AbortController), non-2xx throws `ApiError`, and parses the `{error,detail}` error envelope. There is no bare async `onClick`.
 
-### 2.1 设备列表(首页)
+### 2.1 Device list (home page)
 
-每台设备一张卡片:
+Each device is a card:
 
 ```
 ┌────────────────────────────────────────────────┐
-│ 车库摄像头                      ● 运行中        │
+│ Garage Camera                   ● Running       │
 │ ONVIF: http://192.168.1.10:8081/onvif/device_service
 │ RTSP:  rtsp://192.168.1.10:8554/h264/ch1/main…  │
-│ [测试连接] [快照] [预览] [ONVIF 自检] [编辑] [删除] │
+│ [Test Connection] [Snapshot] [Preview] [ONVIF Self-check] [Edit] [Delete] │
 └────────────────────────────────────────────────┘
 ```
 
-- **测试连接** → `/api/test/rtsp`,卡片内显示结果:连通/认证/编码/延迟,错误按类别给中文提示("TCP 连不通,检查 IP 与端口" / "认证失败,检查用户名密码" / "路径 404");
-- **快照** → 卡片内直接显示 JPEG;
-- **预览** → 弹层 `<img src=/api/preview…>` 实况,关闭(点遮罩/按钮/Esc)即清空 src 断流杀 ffmpeg;
-- **ONVIF 自检** → 渲染方法×状态表格(绿✅/红❌),即本项目立项时那张对比表的自动化版;
-- **编辑** → 打开与"新增设备"同一表单组件的**编辑模式**,用 `GET /api/devices` 补充的字段(soap/rtsp 端口、`auth_user`、每流 `rtsp/width/height/framerate/bitrate`)预填,提交走 `PUT /api/devices/{uuid}`;ONVIF 密码框留空即保持原密码;
-- **删除** → `confirm` 后 `DELETE /api/devices/{uuid}`,成功后刷新设备列表与配置编辑器。
+- **Test Connection** → `/api/test/rtsp`, shows the result in the card: connectivity/auth/codec/latency, errors are shown as localized hints by category ("TCP unreachable, check IP and port" / "Authentication failed, check username and password" / "Path 404");
+- **Snapshot** → shows the JPEG directly in the card;
+- **Preview** → an overlay with `<img src=/api/preview…>` live playback, closing it (clicking the backdrop/button/Esc) clears `src`, tearing down the stream and killing ffmpeg;
+- **ONVIF Self-check** → renders a method × status table (green checkmark/red X), an automated version of the comparison table that originally motivated this project;
+- **Edit** → opens the **edit mode** of the same form component used for "Add Device", pre-filled using the extra fields returned by `GET /api/devices` (soap/rtsp ports, `auth_user`, each stream's `rtsp/width/height/framerate/bitrate`), and submits via `PUT /api/devices/{uuid}`; leaving the ONVIF password field blank keeps the existing password;
+- **Delete** → `DELETE /api/devices/{uuid}` after `confirm`, refreshing the device list and config editor on success.
 
-### 2.2 配置编辑
+### 2.2 Config editor
 
-- YAML 全文编辑器(textarea + 等宽字体,不引前端依赖);
-- "校验"按钮:dry-run 调 `PUT /api/config?dry_run=1`,只报错不落盘;
-- "保存并生效"按钮:落盘 + 热重载,展示重载结果;
-- 顶部提示条:配置文件路径、上次保存时间。
+- Full-text YAML editor (textarea + monospace font, no frontend dependency introduced);
+- "Validate" button: dry-run call to `PUT /api/config?dry_run=1`, reports errors only, nothing is written;
+- "Save & Apply" button: writes to disk + hot reload, shows the reload result;
+- Top notice bar: config file path, last save time.
 
-### 2.3 新增设备向导(表单)
+### 2.3 Add Device wizard (form)
 
-1. 填 RTSP URL → 点"探测" → 自动带出编码/分辨率(SDP 有则回填,无则手填);
-2. 填名称、端口(自动建议下一个空闲端口对)、可选低码流;
-3. "添加" → 后端把设备节点合入 YAML → 校验 → 落盘 → 热重载。
+1. Enter the RTSP URL → click "Probe" → automatically fetches codec/resolution (pre-filled from SDP if available, otherwise entered manually);
+2. Enter name, ports (automatically suggests the next free port pair), optional low-bitrate substream;
+3. "Add" → the backend merges the device node into the YAML → validate → write to disk → hot reload.
 
-## 3. 安全考虑
+## 3. Security considerations
 
-- Web UI 面向内网管理员;开启 Basic 认证后,`/api/*` 与静态页全部走认证;
-- `/api/test/rtsp` 仅接受 `rtsp://` scheme,禁止借道探测任意 TCP 端口之外的协议(SSRF 面收敛:目标端口不限,但协议握手必须是 RTSP);
-- 配置文件中的摄像头密码:`GET /api/config` 原样返回(编辑器要能改),因此**开启 web 认证是使用预设密码场景的前提**,文档与 UI 均给出提示;
-- ffmpeg 命令行参数全部程序拼装,RTSP URL 经 `exec.Command` 参数传递,无 shell 注入面。
+- The Web UI is intended for internal-network administrators; once Basic auth is enabled, all `/api/*` routes and static pages require authentication;
+- `/api/test/rtsp` only accepts the `rtsp://` scheme, and is forbidden from being used as a pretext to probe arbitrary TCP ports with other protocols (SSRF surface reduction: the target port is unrestricted, but the protocol handshake must be RTSP);
+- Camera passwords in the config file: `GET /api/config` returns them verbatim (the editor needs to be able to modify them), so **enabling web authentication is a prerequisite for using preset passwords** — this is called out in both the documentation and the UI;
+- ffmpeg command-line arguments are all assembled programmatically; the RTSP URL is passed via `exec.Command` arguments, leaving no shell-injection surface.

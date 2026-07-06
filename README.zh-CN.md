@@ -18,18 +18,18 @@
 - **Web UI** —— 除 YAML 配置文件外,内嵌小型 Web 后端:在线编辑配置、RTSP 连通性探测(原生 RTSP 客户端,支持 Digest/Basic 认证与 SDP 解析)、抓取快照、MJPEG 实时预览、对虚拟设备本身做 ONVIF 自检。
 - **Docker 优先部署** —— 多阶段构建,镜像内置 ffmpeg;提供 macvlan compose 示例,每台虚拟设备可在局域网拿到独立 IP/MAC。
 - **单二进制、极少依赖** —— 仅依赖 `gopkg.in/yaml.v3` 与官方 MCP `go-sdk`;SOAP 报文为手写 XML 模板,不用 WSDL 代码生成。
-- **内置 MCP 服务端点** —— `/mcp`(Streamable HTTP)把设备增删改查、RTSP 探测、快照、ONVIF 自检等能力以 MCP 工具形式暴露给 Claude Code 等 AI 客户端(见 [docs/07-mcp.md](docs/07-mcp.md))。
+- **内置 MCP 服务端点** —— `/mcp`(Streamable HTTP)把设备增删改查、RTSP 探测、快照、ONVIF 自检等能力以 MCP 工具形式暴露给 Claude Code 等 AI 客户端(见 [docs/07-mcp.zh-CN.md](docs/07-mcp.zh-CN.md))。
 
 ## 文档
 
 | 文档 | 内容 |
 |------|------|
-| [docs/01-architecture.md](docs/01-architecture.md) | 总体架构、模块划分、数据流、目录结构 |
-| [docs/02-onvif-spec.md](docs/02-onvif-spec.md) | ONVIF / SOAP / WS-Discovery / WSSE 规范符合性设计、方法矩阵、Fault 语义 |
-| [docs/03-config.md](docs/03-config.md) | YAML 配置格式与校验规则 |
-| [docs/04-web-api.md](docs/04-web-api.md) | Web 后端 REST API 与 UI 设计 |
-| [docs/05-deployment.md](docs/05-deployment.md) | Docker / macvlan 部署方案 |
-| [docs/07-mcp.md](docs/07-mcp.md) | 内置 MCP 服务端点(`/mcp`)、工具清单、实现契约 |
+| [docs/01-architecture.zh-CN.md](docs/01-architecture.zh-CN.md) | 总体架构、模块划分、数据流、目录结构 |
+| [docs/02-onvif-spec.zh-CN.md](docs/02-onvif-spec.zh-CN.md) | ONVIF / SOAP / WS-Discovery / WSSE 规范符合性设计、方法矩阵、Fault 语义 |
+| [docs/03-config.zh-CN.md](docs/03-config.zh-CN.md) | YAML 配置格式与校验规则 |
+| [docs/04-web-api.zh-CN.md](docs/04-web-api.zh-CN.md) | Web 后端 REST API 与 UI 设计 |
+| [docs/05-deployment.zh-CN.md](docs/05-deployment.zh-CN.md) | Docker / macvlan 部署方案 |
+| [docs/07-mcp.zh-CN.md](docs/07-mcp.zh-CN.md) | 内置 MCP 服务端点(`/mcp`)、工具清单、实现契约 |
 
 ## 快速开始(Docker)
 
@@ -52,9 +52,9 @@ docker run -d --name onvif-proxy --network host \
 open http://<host>:8080
 ```
 
-首次运行**无需准备配置文件** —— 会自动生成 `./config/config.yaml`,设备完全可以通过 Web UI 添加("➕ 新增设备"表单会探测你的 RTSP URL 并自动回填分辨率/帧率)。macvlan(每个代理独立 IP/MAC,Unifi Protect 体验最佳)或 bridge 模式(Docker Desktop)见 [docs/05-deployment.md](docs/05-deployment.md) 与 [compose.yaml](compose.yaml)。
+首次运行**无需准备配置文件** —— 会自动生成 `./config/config.yaml`,设备完全可以通过 Web UI 添加("➕ 新增设备"表单会探测你的 RTSP URL 并自动回填分辨率/帧率)。macvlan(每个代理独立 IP/MAC,Unifi Protect 体验最佳)或 bridge 模式(Docker Desktop)见 [docs/05-deployment.zh-CN.md](docs/05-deployment.zh-CN.md) 与 [compose.yaml](compose.yaml)。
 
-全局配置也支持环境变量覆盖(`-e ONVIF_WEB_USERNAME=admin -e ONVIF_WEB_PASSWORD=…` 给 Web UI 配 Basic 认证,另有 `ONVIF_ADVERTISE_IP`、`ONVIF_DISCOVERY`、`ONVIF_WEB_ENABLED`、`ONVIF_WEB_PORT`)。env 优先于 YAML,仅内存生效,绝不写回挂载的配置文件 —— 详见 [docs/03-config.md](docs/03-config.md) 第 3 节。
+全局配置也支持环境变量覆盖(`-e ONVIF_WEB_USERNAME=admin -e ONVIF_WEB_PASSWORD=…` 给 Web UI 配 Basic 认证,另有 `ONVIF_ADVERTISE_IP`、`ONVIF_DISCOVERY`、`ONVIF_WEB_ENABLED`、`ONVIF_WEB_PORT`)。env 优先于 YAML,仅内存生效,绝不写回挂载的配置文件 —— 详见 [docs/03-config.zh-CN.md](docs/03-config.zh-CN.md) 第 3 节。
 
 ### Docker env 覆盖示例
 
@@ -64,7 +64,7 @@ open http://<host>:8080
 services:
   onvif-proxy:
     image: ghcr.io/aiaid/onvif-proxy:latest
-    network_mode: host          # 或 macvlan / bridge,见 docs/05-deployment.md
+    network_mode: host          # 或 macvlan / bridge,见 docs/05-deployment.zh-CN.md
     restart: unless-stopped
     volumes:
       - ./config:/config
@@ -77,7 +77,7 @@ services:
 
 ### config.yaml 示例
 
-最小可用的单设备配置(完整字段说明见 [docs/03-config.md](docs/03-config.md)):
+最小可用的单设备配置(完整字段说明见 [docs/03-config.zh-CN.md](docs/03-config.zh-CN.md)):
 
 ```yaml
 server:

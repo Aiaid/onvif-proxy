@@ -1,17 +1,19 @@
-# 06 · 包间接口契约(实现对齐基准)
+# 06 · Inter-Package Interface Contract (Implementation Alignment Baseline)
 
-> 本文档是并行开发各包时的**签名契约**。实现必须精确匹配这里的导出签名;若实现中发现契约不合理,改动前先更新本文档。`internal/config` 已实现,其余包以它为地基。
+**English** | [简体中文](06-internal-api.zh-CN.md)
 
-模块路径:`github.com/Aiaid/onvif-proxy`。依赖规则:所有包可 import `internal/config` 与标准库;**禁止新增第三方依赖**(go.mod 直接依赖仅 yaml.v3,唯一例外:`internal/web` 可 import 官方 `github.com/modelcontextprotocol/go-sdk/mcp` 实现 `/mcp` 端点,契约见 `docs/07-mcp.md`);包之间除下述声明外不得互相 import。
+> This document is the **signature contract** used while developing the packages in parallel. Implementations must match the exported signatures here exactly; if an implementation reveals that the contract is unreasonable, update this document before making the change. `internal/config` is already implemented; the remaining packages are built on top of it as the foundation.
 
-## internal/config(已实现,只读参考)
+Module path: `github.com/Aiaid/onvif-proxy`. Dependency rules: every package may import `internal/config` and the standard library; **adding new third-party dependencies is forbidden** (the only direct go.mod dependency is yaml.v3, with one exception: `internal/web` may import the official `github.com/modelcontextprotocol/go-sdk/mcp` to implement the `/mcp` endpoint — see the contract in `docs/07-mcp.md`); packages must not import one another beyond what is declared below.
+
+## internal/config (already implemented, read-only reference)
 
 ```go
 type Config struct { Server ServerConfig; Web WebConfig; Devices []*Device }
-func Load(path string) (*Config, error)          // 读+校验+生成 uuid/mac 并写回
-func Parse(data []byte) (*Config, error)         // 严格解析+校验(dry-run 用)
-func Save(path string, cfg *Config) error        // 原子写
-func ApplyEnvOverrides(cfg *Config) ([]string, error) // ONVIF_* env 覆盖(仅内存,覆盖后重校验);返回已应用项供日志
+func Load(path string) (*Config, error)          // read + validate + generate uuid/mac and persist
+func Parse(data []byte) (*Config, error)         // strict parse + validate (for dry-run)
+func Save(path string, cfg *Config) error        // atomic write
+func ApplyEnvOverrides(cfg *Config) ([]string, error) // ONVIF_* env overrides (in-memory only, re-validated after overriding); returns the applied items for logging
 func DetectAdvertiseIP() string
 
 type Device struct { Name, UUID, MAC, Serial string; Ports Ports; Info Info;
@@ -25,41 +27,41 @@ func (d *Device) SnapshotStream() *Stream
 func (d *Device) SnapshotCacheSeconds() int
 
 type Stream struct { Name, RTSP string; Width, Height, Framerate, Bitrate, ProxyPort int }
-func (s *Stream) TargetAddr() string             // "host:port"(默认 554)
+func (s *Stream) TargetAddr() string             // "host:port" (default 554)
 func (s *Stream) PathQuery() string              // "/path?query"
-func (s *Stream) SourceURL() string              // 含凭证的完整上游 URL
+func (s *Stream) SourceURL() string              // full upstream URL including credentials
 func (s *Stream) ProfileToken() string           // "profile_<name>"
 func (s *Stream) EncoderToken() string           // "vec_<name>"
 ```
 
-## internal/soap(SOAP 1.2 基础层)
+## internal/soap (SOAP 1.2 base layer)
 
 ```go
 package soap
 
-// 解析后的请求
+// Parsed request
 type Request struct {
-    Action    string            // Body 首子元素 localName,如 "GetStreamUri"
-    Namespace string            // 该元素的 namespace URI
-    Body      []byte            // Body 的 innerxml(供提取参数)
-    Security  *UsernameToken    // 无 WSSE 头时为 nil
+    Action    string            // localName of the Body's first child element, e.g. "GetStreamUri"
+    Namespace string            // the namespace URI of that element
+    Body      []byte            // the Body's innerxml (for extracting parameters)
+    Security  *UsernameToken    // nil when there is no WSSE header
 }
 type UsernameToken struct { Username, Password, PasswordType, Nonce, Created string }
 
 func ParseRequest(body []byte) (*Request, error)
-// 从 innerxml 提取首个匹配 localName 的元素文本(如 ProfileToken)
+// Extracts the text of the first element in innerxml matching localName (e.g. ProfileToken)
 func ExtractElement(inner []byte, localName string) (string, bool)
 
-// WSSE PasswordDigest / PasswordText 校验,clockSkew 为 Created 容忍偏差
+// WSSE PasswordDigest / PasswordText verification; clockSkew is the tolerated deviation for Created
 func (t *UsernameToken) Verify(username, password string, clockSkew time.Duration) bool
 
-// 响应渲染:body 为已渲染的 Body 内部 XML;Envelope/命名空间由本层统一加
+// Response rendering: body is the already-rendered inner XML of the Body; the Envelope/namespaces are added uniformly by this layer
 func Envelope(body string) []byte
 
-// Fault:写入 w(设置 Content-Type 与 HTTP 状态码)并返回
-// code: "Sender"/"Receiver";subcode 如 "ter:ActionNotSupported"
+// Fault: writes to w (sets Content-Type and HTTP status code) and returns
+// code: "Sender"/"Receiver"; subcode e.g. "ter:ActionNotSupported"
 func WriteFault(w http.ResponseWriter, code, subcode, reason string)
-// 便捷:
+// Convenience wrappers:
 func WriteActionNotSupported(w http.ResponseWriter, action string) // Receiver, HTTP 500
 func WriteNotAuthorized(w http.ResponseWriter)                     // Sender, HTTP 400
 func WriteInvalidArg(w http.ResponseWriter, reason string)         // Sender, HTTP 400
@@ -67,56 +69,57 @@ func WriteInvalidArg(w http.ResponseWriter, reason string)         // Sender, HT
 func XMLEscape(s string) string
 ```
 
-Envelope 统一声明命名空间前缀:`env`(SOAP 1.2)、`tds`、`trt`、`tt`、`ter`、`wsnt` 不需要。Fault 结构含 Code/Subcode/Reason(xml:lang="en")。
+Envelope uniformly declares the namespace prefixes `env` (SOAP 1.2), `tds`, `trt`, `tt`, `ter`; `wsnt` is not needed. The Fault structure contains Code/Subcode/Reason (xml:lang="en").
 
-## internal/onvif(Device + Media 服务,每设备一个 HTTP server)
+## internal/onvif (Device + Media services, one HTTP server per device)
 
 ```go
-package onvif // 允许 import: internal/config, internal/soap
+package onvif // allowed imports: internal/config, internal/soap
 
 type Options struct {
-    AdvertiseIP  string // 请求无 Host 头时构造 URI 的兜底
-    Version      string // firmware 版本展示
-    // 快照回调,由 main 注入(透传/ffmpeg/缓存都在 main 侧组合)
+    AdvertiseIP  string // fallback used to construct the URI when the request has no Host header
+    Version      string // firmware version shown to clients
+    // Snapshot callback, injected by main (pass-through / ffmpeg / caching are all composed on the main side)
     SnapshotFunc func(ctx context.Context, streamName string) (data []byte, contentType string, err error)
 }
 
 func NewServer(dev *config.Device, opts Options) *Server
-func (s *Server) Run(ctx context.Context) error // 监听 dev.Ports.SOAP,ctx 取消时优雅退出
+func (s *Server) Run(ctx context.Context) error // listens on dev.Ports.SOAP; shuts down gracefully when ctx is canceled
 
-// 路由:
+// Routes:
 //   POST /onvif/device_service
 //   POST /onvif/media_service
-//   GET  /onvif/snapshot?token=<profileToken>   (免 WSSE;调 SnapshotFunc)
+//   GET  /onvif/snapshot?token=<profileToken>   (no WSSE required; calls SnapshotFunc)
 ```
 
-行为要求(细节见 docs/02):方法矩阵按 02 文档第 4/5 节;`GetSystemDateAndTime` 免认证;`dev.Auth == nil` 全放行;URI 构造优先 `r.Host`;未知方法 → `soap.WriteActionNotSupported`。
+Behavioral requirements (see docs/02-onvif-spec.md for details): the method matrix follows sections 4/5 of document 02; `GetSystemDateAndTime` requires no authentication; when `dev.Auth == nil` everything is allowed through unauthenticated; URI construction prefers `r.Host`; unknown methods → `soap.WriteActionNotSupported`.
 
-## internal/discovery(WS-Discovery)
+## internal/discovery (WS-Discovery)
 
 ```go
 package discovery
 
-type Device struct { UUID, Name, Hardware, XAddr string } // XAddr 完整 URL
+type Device struct { UUID, Name, Hardware, XAddr string } // XAddr is the full URL
 type LogEntry struct { Time time.Time; Remote, Kind, Detail string } // Kind: probe/hello/bye/match
 
 func New(devices []Device) *Server
-func (s *Server) Run(ctx context.Context) error  // 绑定 :3702、加组播、Hello;ctx 取消时发 Bye
-func (s *Server) SetDevices(devices []Device)    // 热重载:对差集发 Bye/Hello
-func (s *Server) Log() []LogEntry                // 最近 50 条,新在前
+func (s *Server) Run(ctx context.Context) error  // binds :3702, joins the multicast group, sends Hello; sends Bye when ctx is canceled
+func (s *Server) SetDevices(devices []Device)    // hot reload: sends Bye/Hello for the diff set
+func (s *Server) Log() []LogEntry                // last 50 entries, newest first
 ```
 
-## internal/rtspproxy(TCP 透传)
+## internal/rtspproxy (TCP pass-through)
 
 ```go
 package rtspproxy
 
-// 监听 127.0.0.1 之外全接口的 listenPort,双向 io.Copy 到 target("host:port")。
-// ctx 取消时关闭 listener 与全部在途连接。返回 net.Listen 错误或 ctx.Err()。
+// Listens on listenPort across all interfaces (not just 127.0.0.1), bidirectionally
+// io.Copy to target ("host:port"). Closes the listener and all in-flight connections
+// when ctx is canceled. Returns the net.Listen error or ctx.Err().
 func Run(ctx context.Context, listenPort int, target string) error
 ```
 
-## internal/rtsp(原生 RTSP 探测客户端)
+## internal/rtsp (native RTSP probing client)
 
 ```go
 package rtsp
@@ -132,40 +135,43 @@ const (
 type Track struct { Type, Codec, Fmtp string }     // Type: "video"/"audio"
 type Result struct {
     OK        bool
-    Status    int           // 最终 RTSP 状态码
+    Status    int           // final RTSP status code
     Auth      string        // "none"/"basic"/"digest"
-    Server    string        // Server 头
+    Server    string        // the Server header
     LatencyMS int64
     Tracks    []Track
-    ErrKind   ErrKind       // OK=false 时有效
+    ErrKind   ErrKind       // valid when OK=false
     ErrDetail string
 }
 func Probe(ctx context.Context, rawURL string) *Result
-// OPTIONS → DESCRIBE;401 时按 WWW-Authenticate 支持 Digest(MD5, RFC 7616)与 Basic;
-// SDP 解析 m=/a=rtpmap/a=fmtp;整体超时 5s(可被 ctx 提前取消)
+// OPTIONS → DESCRIBE; on 401, supports Digest (MD5, RFC 7616) and Basic per WWW-Authenticate;
+// SDP parsing of m=/a=rtpmap/a=fmtp; overall timeout of 5s (can be canceled early via ctx)
 ```
 
-## internal/mediautil(ffmpeg 封装)
+## internal/mediautil (ffmpeg wrapper)
 
 ```go
 package mediautil
 
-func Available() bool // PATH 中是否有 ffmpeg
+func Available() bool // whether ffmpeg is present on PATH
 
-// 抓单帧 JPEG:-rtsp_transport tcp -frames:v 1;stderr 摘要进 error
+// Grabs a single JPEG frame: -rtsp_transport tcp -frames:v 1; a summary of stderr is folded into error
 func Grab(ctx context.Context, rtspURL string) ([]byte, error)
 
-// TTL 缓存 + singleflight(并发同 key 只跑一个 fetch)
+// TTL cache + singleflight (concurrent requests for the same key run only one fetch)
 type Cache struct{ /* ... */ }
 func NewCache(ttl time.Duration) *Cache
 func (c *Cache) Get(key string, fetch func() ([]byte, error)) ([]byte, error)
 
-// MJPEG 预览:缩至 maxWidth、fps 帧率、静音,multipart/x-mixed-replace 写入 w;
-// 客户端断开(r.Context 取消)即杀 ffmpeg 进程组
+// MJPEG preview: scaled down to maxWidth, at fps frame rate, muted, written to w as
+// multipart/x-mixed-replace; the ffmpeg process group is killed as soon as the client
+// disconnects (r.Context is canceled)
 func ServeMJPEG(w http.ResponseWriter, r *http.Request, rtspURL string, maxWidth, fps int) error
 
-// 单路视频流的编码/分辨率/帧率摘要(ffprobe 提取)。FPS 无帧率信息时为 0;
-// Bitrate 单位 kbps,ffprobe 元数据未声明时降级为拷流实测,仍取不到则为 0。
+// Summary of codec/resolution/frame rate for a single video stream (extracted via
+// ffprobe). FPS is 0 when frame-rate information is unavailable; Bitrate is in kbps,
+// and falls back to a measured pass-through estimate when ffprobe metadata doesn't
+// declare it, or 0 if that still can't be obtained.
 type StreamInfo struct {
     Codec   string // ffprobe codec_name
     Width   int
@@ -174,22 +180,24 @@ type StreamInfo struct {
     Bitrate int
 }
 
-// 对 rtspURL 跑 ffprobe(-rtsp_transport tcp,选首个视频流),取不到 bit_rate 时
-// 退化为拷流几秒实测码率;URL 仅作为 exec 参数传递,不经 shell。ctx 无 deadline
-// 时套 15s 超时。供 POST /api/test/streaminfo 与 MCP get_stream_info 工具调用。
+// Runs ffprobe against rtspURL (-rtsp_transport tcp, selecting the first video stream);
+// when bit_rate cannot be obtained, falls back to measuring the pass-through bitrate
+// over a few seconds; the URL is passed only as an exec argument, never through a
+// shell. A 15s timeout is applied when ctx has no deadline. Called by
+// POST /api/test/streaminfo and the MCP get_stream_info tool.
 func ProbeInfo(ctx context.Context, rtspURL string) (*StreamInfo, error)
 ```
 
-## internal/web(REST API + 内嵌 UI)
+## internal/web (REST API + embedded UI)
 
 ```go
-package web // 允许 import: internal/config, internal/rtsp, internal/mediautil, internal/discovery
+package web // allowed imports: internal/config, internal/rtsp, internal/mediautil, internal/discovery
 
-// 由 main 实现
+// Implemented by main
 type Backend interface {
     ConfigYAML() ([]byte, error)
-    ApplyConfig(raw []byte, dryRun bool) error   // Parse→(落盘+热重载);错误原样返回给前端
-    Devices() []DeviceRuntime                    // 运行中的设备快照
+    ApplyConfig(raw []byte, dryRun bool) error   // Parse → (persist + hot reload); errors are returned to the frontend as-is
+    Devices() []DeviceRuntime                    // snapshot of the currently running devices
     Snapshot(ctx context.Context, dev *config.Device, streamName string) ([]byte, string, error)
     DiscoveryLog() []discovery.LogEntry
     Status() Status
@@ -205,13 +213,13 @@ func New(cfg config.WebConfig, backend Backend) *Server
 func (s *Server) Run(ctx context.Context) error
 ```
 
-REST 路由与语义见 docs/04(`/api/config`、`/api/devices`、`/api/test/rtsp`、`/api/test/streaminfo`、`/api/test/snapshot`、`/api/preview`、`/api/test/onvif`、`/api/discovery/log`、`/api/status`、`/healthz`)。要点:
+See docs/04-web-api.md for REST routes and semantics (`/api/config`, `/api/devices`, `/api/test/rtsp`, `/api/test/streaminfo`, `/api/test/snapshot`, `/api/preview`, `/api/test/onvif`, `/api/discovery/log`, `/api/status`, `/healthz`). Key points:
 
-- 探测直接调 `rtsp.Probe`;预览直接调 `mediautil.ServeMJPEG`(每设备并发上限 2,web 层管信号量);快照走 `Backend.Snapshot`(缓存/透传由 main 组合);
-- **ONVIF 自检**在 web 包内实现:对 `dev.Ports.SOAP` 逐方法发手写 SOAP envelope(WSSE 按 dev.Auth 生成),按 docs/04 的方法清单返回 `[{method, http_status, soap_fault, pass}]`;最后加一个不存在的方法,pass 条件 = 返回体是合法 Fault XML 且 subcode 为 ActionNotSupported;
-- 静态 UI:Preact+TSX 源码在 `internal/web/ui/`,esbuild 打包为 `static/dist/{app.js,app.css}`(提交进仓库),`index.html` 薄壳,`go:embed all:static` 进二进制(含 `dist/`);`GET /dist/*` 由 `http.FileServerFS` 从嵌入 FS 服务;`PUT /api/devices/{uuid}` 编辑设备(见 docs/04);`GET /api/devices` DTO 为编辑预填补充了 `rtsp_port/auth_user` 与每流源参数;
-- Basic 认证:cfg.Username 非空时对全部路由生效。
+- Probing calls `rtsp.Probe` directly; preview calls `mediautil.ServeMJPEG` directly (concurrency capped at 2 per device, with the web layer managing the semaphore); snapshots go through `Backend.Snapshot` (caching/pass-through is composed on the main side);
+- The **ONVIF self-test** is implemented inside the web package: it sends hand-written SOAP envelopes method by method to `dev.Ports.SOAP` (WSSE generated according to dev.Auth), returning `[{method, http_status, soap_fault, pass}]` per the method list in docs/04-web-api.md; a final call to a nonexistent method is appended, whose pass condition is that the response body is a well-formed Fault XML with subcode ActionNotSupported;
+- Static UI: the Preact+TSX source lives in `internal/web/ui/`, bundled by esbuild into `static/dist/{app.js,app.css}` (committed to the repository); `index.html` is a thin shell; `go:embed all:static` embeds it into the binary (including `dist/`); `GET /dist/*` is served from the embedded FS via `http.FileServerFS`; `PUT /api/devices/{uuid}` edits a device (see docs/04-web-api.md); the `GET /api/devices` DTO additionally supplies `rtsp_port/auth_user` and per-stream source parameters to prefill the edit form;
+- Basic authentication: applies to all routes when cfg.Username is non-empty.
 
-## cmd/onvif-proxy(main,集成层,最后实现)
+## cmd/onvif-proxy (main, integration layer, implemented last)
 
-职责:flag 解析(`-config`,默认 `./config.yaml`;`-version`)→ `config.Load` → 组装 Manager(实现 `web.Backend`;每设备起 onvif.Server + rtspproxy;discovery.Server;快照函数 = 透传 or mediautil.Grab + Cache)→ 信号处理与热重载(stop-then-start)。
+Responsibilities: flag parsing (`-config`, default `./config.yaml`; `-version`) → `config.Load` → assemble the Manager (implements `web.Backend`; starts an onvif.Server + rtspproxy per device; discovery.Server; snapshot function = pass-through or mediautil.Grab + Cache) → signal handling and hot reload (stop-then-start).
