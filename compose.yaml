@@ -8,6 +8,10 @@ services:
     restart: unless-stopped
     volumes:
       - ./config:/config
+    # Runtime overrides (env > yaml, never written back to config.yaml);
+    # full list in docs/03-config.md.
+    # environment:
+    #   ONVIF_WEB_PORT: "9090"   # web UI port (overrides web.port)
     # --- Mode B: host networking (Linux only; simplest, multicast works) ---
     network_mode: host
 

@@ -8,12 +8,14 @@ Go 编写的 RTSP → ONVIF 虚拟设备代理:把任意 RTSP 流包装成 ONVIF
 
 ## 设计文档(真相来源)
 
-- `docs/01-architecture.md` — 模块划分、数据流、目录结构、技术选型(含"为什么不用 WSDL 代码生成")
-- `docs/02-onvif-spec.md` — ONVIF 方法清单、Fault 语义、WSSE、WS-Discovery 细节;末尾有验收基准表
-- `docs/03-config.md` — YAML 配置格式与校验规则
-- `docs/04-web-api.md` — REST API 契约与 UI 设计
-- `docs/05-deployment.md` — Dockerfile、macvlan/host/bridge 三种网络模式
-- `docs/07-mcp.md` — MCP 服务端点(基于官方 go-sdk 的 Streamable HTTP `/mcp`、工具清单、实现契约)
+每篇设计文档都是双语:中文原文 `docs/NN-name.md` 为主(历史累积、改动最频繁),同名英文版 `docs/NN-name.en.md` 内容对应。**新增或修改设计文档时,默认先写/先改英文版,再同步中文版**(或至少保证两者同一次改动内一起提交,不允许长期只改一边);`docs/06-internal-api.md` 作为包间签名契约,任何签名变更必须双语同步。
+
+- `docs/01-architecture.md` / `docs/01-architecture.en.md` — 模块划分、数据流、目录结构、技术选型(含"为什么不用 WSDL 代码生成")
+- `docs/02-onvif-spec.md` / `docs/02-onvif-spec.en.md` — ONVIF 方法清单、Fault 语义、WSSE、WS-Discovery 细节;末尾有验收基准表
+- `docs/03-config.md` / `docs/03-config.en.md` — YAML 配置格式与校验规则
+- `docs/04-web-api.md` / `docs/04-web-api.en.md` — REST API 契约与 UI 设计
+- `docs/05-deployment.md` / `docs/05-deployment.en.md` — Dockerfile、macvlan/host/bridge 三种网络模式
+- `docs/07-mcp.md` / `docs/07-mcp.en.md` — MCP 服务端点(基于官方 go-sdk 的 Streamable HTTP `/mcp`、工具清单、实现契约)
 
 ## 硬性约束
 

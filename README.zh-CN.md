@@ -17,7 +17,8 @@
 - **零转码 RTSP 代理** —— 每设备一个 TCP 透传代理,字节原样转发到真实摄像头;不解码不转码,无 CPU 开销。ffmpeg 仅用于快照与 UI 预览。
 - **Web UI** —— 除 YAML 配置文件外,内嵌小型 Web 后端:在线编辑配置、RTSP 连通性探测(原生 RTSP 客户端,支持 Digest/Basic 认证与 SDP 解析)、抓取快照、MJPEG 实时预览、对虚拟设备本身做 ONVIF 自检。
 - **Docker 优先部署** —— 多阶段构建,镜像内置 ffmpeg;提供 macvlan compose 示例,每台虚拟设备可在局域网拿到独立 IP/MAC。
-- **单二进制、极少依赖** —— 仅依赖 `gopkg.in/yaml.v3`;SOAP 报文为手写 XML 模板,不用 WSDL 代码生成。
+- **单二进制、极少依赖** —— 仅依赖 `gopkg.in/yaml.v3` 与官方 MCP `go-sdk`;SOAP 报文为手写 XML 模板,不用 WSDL 代码生成。
+- **内置 MCP 服务端点** —— `/mcp`(Streamable HTTP)把设备增删改查、RTSP 探测、快照、ONVIF 自检等能力以 MCP 工具形式暴露给 Claude Code 等 AI 客户端(见 [docs/07-mcp.md](docs/07-mcp.md))。
 
 ## 文档
 
@@ -28,6 +29,7 @@
 | [docs/03-config.md](docs/03-config.md) | YAML 配置格式与校验规则 |
 | [docs/04-web-api.md](docs/04-web-api.md) | Web 后端 REST API 与 UI 设计 |
 | [docs/05-deployment.md](docs/05-deployment.md) | Docker / macvlan 部署方案 |
+| [docs/07-mcp.md](docs/07-mcp.md) | 内置 MCP 服务端点(`/mcp`)、工具清单、实现契约 |
 
 ## 快速开始(Docker)
 
@@ -53,6 +55,54 @@ open http://<host>:8080
 首次运行**无需准备配置文件** —— 会自动生成 `./config/config.yaml`,设备完全可以通过 Web UI 添加("➕ 新增设备"表单会探测你的 RTSP URL 并自动回填分辨率/帧率)。macvlan(每个代理独立 IP/MAC,Unifi Protect 体验最佳)或 bridge 模式(Docker Desktop)见 [docs/05-deployment.md](docs/05-deployment.md) 与 [compose.yaml](compose.yaml)。
 
 全局配置也支持环境变量覆盖(`-e ONVIF_WEB_USERNAME=admin -e ONVIF_WEB_PASSWORD=…` 给 Web UI 配 Basic 认证,另有 `ONVIF_ADVERTISE_IP`、`ONVIF_DISCOVERY`、`ONVIF_WEB_ENABLED`、`ONVIF_WEB_PORT`)。env 优先于 YAML,仅内存生效,绝不写回挂载的配置文件 —— 详见 [docs/03-config.md](docs/03-config.md) 第 3 节。
+
+### Docker env 覆盖示例
+
+`compose.yaml`(仓库自带这份文件,含三种网络模式的注释切换):
+
+```yaml
+services:
+  onvif-proxy:
+    image: ghcr.io/aiaid/onvif-proxy:latest
+    network_mode: host          # 或 macvlan / bridge,见 docs/05-deployment.md
+    restart: unless-stopped
+    volumes:
+      - ./config:/config
+    environment:
+      ONVIF_WEB_USERNAME: admin
+      ONVIF_WEB_PASSWORD: change-me
+      ONVIF_ADVERTISE_IP: "192.168.1.10"   # bridge 模式下必填
+      ONVIF_WEB_PORT: "9090"
+```
+
+### config.yaml 示例
+
+最小可用的单设备配置(完整字段说明见 [docs/03-config.md](docs/03-config.md)):
+
+```yaml
+server:
+  advertise_ip: ""     # 留空 = 自动探测
+  discovery: true
+
+web:
+  enabled: true
+  port: 8080
+
+devices:
+  - name: "车库摄像头"
+    ports:
+      soap: 8081
+      rtsp: 8554
+    streams:
+      - name: main
+        rtsp: "rtsp://user:pass@192.168.1.50:554/h264/ch1/main/av_stream"
+        width: 1920
+        height: 1080
+        framerate: 25
+        bitrate: 2048
+```
+
+`uuid`、`mac`、`serial` 留空即可,首次保存时自动生成并写回。
 
 ## 认证模型(RTSP 与 ONVIF 两层)
 

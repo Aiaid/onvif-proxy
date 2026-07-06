@@ -58,6 +58,54 @@ No config file needed for the first run — a default one is generated under `./
 
 Global settings can also be overridden via environment variables (`-e ONVIF_WEB_USERNAME=admin -e ONVIF_WEB_PASSWORD=…` for web UI Basic auth, plus `ONVIF_ADVERTISE_IP`, `ONVIF_DISCOVERY`, `ONVIF_WEB_ENABLED`, `ONVIF_WEB_PORT`). Env beats YAML, applies in memory only, and is never written back to the mounted config file — see [docs/03-config.md](docs/03-config.md) §3.
 
+### Docker env override example
+
+`compose.yaml` (see the file in this repo for all three network modes):
+
+```yaml
+services:
+  onvif-proxy:
+    image: ghcr.io/aiaid/onvif-proxy:latest
+    network_mode: host          # or macvlan / bridge, see docs/05-deployment.md
+    restart: unless-stopped
+    volumes:
+      - ./config:/config
+    environment:
+      ONVIF_WEB_USERNAME: admin
+      ONVIF_WEB_PASSWORD: change-me
+      ONVIF_ADVERTISE_IP: "192.168.1.10"   # required in bridge mode
+      ONVIF_WEB_PORT: "9090"
+```
+
+### config.yaml example
+
+A minimal single-device config (full reference: [docs/03-config.md](docs/03-config.md)):
+
+```yaml
+server:
+  advertise_ip: ""     # empty = auto-detect
+  discovery: true
+
+web:
+  enabled: true
+  port: 8080
+
+devices:
+  - name: "Garage Camera"
+    ports:
+      soap: 8081
+      rtsp: 8554
+    streams:
+      - name: main
+        rtsp: "rtsp://user:pass@192.168.1.50:554/h264/ch1/main/av_stream"
+        width: 1920
+        height: 1080
+        framerate: 25
+        bitrate: 2048
+```
+
+`uuid`, `mac`, and `serial` are auto-generated and written back on first save — omit them.
+
 ## Authentication model (RTSP vs ONVIF)
 
 There are **two independent credential layers** — a frequent point of confusion:

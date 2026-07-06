@@ -163,6 +163,21 @@ func (c *Cache) Get(key string, fetch func() ([]byte, error)) ([]byte, error)
 // MJPEG 预览:缩至 maxWidth、fps 帧率、静音,multipart/x-mixed-replace 写入 w;
 // 客户端断开(r.Context 取消)即杀 ffmpeg 进程组
 func ServeMJPEG(w http.ResponseWriter, r *http.Request, rtspURL string, maxWidth, fps int) error
+
+// 单路视频流的编码/分辨率/帧率摘要(ffprobe 提取)。FPS 无帧率信息时为 0;
+// Bitrate 单位 kbps,ffprobe 元数据未声明时降级为拷流实测,仍取不到则为 0。
+type StreamInfo struct {
+    Codec   string // ffprobe codec_name
+    Width   int
+    Height  int
+    FPS     int
+    Bitrate int
+}
+
+// 对 rtspURL 跑 ffprobe(-rtsp_transport tcp,选首个视频流),取不到 bit_rate 时
+// 退化为拷流几秒实测码率;URL 仅作为 exec 参数传递,不经 shell。ctx 无 deadline
+// 时套 15s 超时。供 POST /api/test/streaminfo 与 MCP get_stream_info 工具调用。
+func ProbeInfo(ctx context.Context, rtspURL string) (*StreamInfo, error)
 ```
 
 ## internal/web(REST API + 内嵌 UI)
@@ -190,7 +205,7 @@ func New(cfg config.WebConfig, backend Backend) *Server
 func (s *Server) Run(ctx context.Context) error
 ```
 
-REST 路由与语义见 docs/04(`/api/config`、`/api/devices`、`/api/test/rtsp`、`/api/test/snapshot`、`/api/preview`、`/api/test/onvif`、`/api/discovery/log`、`/api/status`、`/healthz`)。要点:
+REST 路由与语义见 docs/04(`/api/config`、`/api/devices`、`/api/test/rtsp`、`/api/test/streaminfo`、`/api/test/snapshot`、`/api/preview`、`/api/test/onvif`、`/api/discovery/log`、`/api/status`、`/healthz`)。要点:
 
 - 探测直接调 `rtsp.Probe`;预览直接调 `mediautil.ServeMJPEG`(每设备并发上限 2,web 层管信号量);快照走 `Backend.Snapshot`(缓存/透传由 main 组合);
 - **ONVIF 自检**在 web 包内实现:对 `dev.Ports.SOAP` 逐方法发手写 SOAP envelope(WSSE 按 dev.Auth 生成),按 docs/04 的方法清单返回 `[{method, http_status, soap_fault, pass}]`;最后加一个不存在的方法,pass 条件 = 返回体是合法 Fault XML 且 subcode 为 ActionNotSupported;

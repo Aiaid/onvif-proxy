@@ -35,6 +35,7 @@
     │  HTTP :8080               │  │ Web Server               │              │         │
     └───────────────────────────┼─▶│  - REST API              │              │         │
                                 │  │  - 内嵌静态 UI (embed)     │              │         │
+                                │  │  - /mcp (12 个 MCP 工具)   │              │         │
                                 │  │  - RTSP Probe 客户端       │─────────────┼─────────┤ RTSP DESCRIBE
                                 │  │  - ffmpeg 快照/MJPEG 预览  │─────────────┼─────────┘ 拉流
                                 │  └──────────────────────────┘              │
@@ -45,13 +46,13 @@
 
 | 组件 | 职责 |
 |------|------|
-| **Config Store** | 加载/校验/原子写回 YAML;为缺省字段生成持久化默认值(UUID、MAC);向 Manager 发布重载事件 |
+| **Config Store** | 加载/校验/原子写回 YAML;为缺省字段生成持久化默认值(UUID、MAC);向 Manager 发布重载事件;加载后应用 `ApplyEnvOverrides`(`ONVIF_*` 环境变量运行时覆盖,仅在内存中生效、绝不写回 YAML,见 `internal/config/env.go`、docs/03-config.md §3) |
 | **Device Manager** | 按配置生成 N 个 Virtual Device 实例;负责启停与热重载(先停后起,端口重绑定) |
 | **Virtual Device** | 一台虚拟 ONVIF 摄像机 = 1 个 SOAP HTTP 端口 + 1 个 RTSP 代理端口;持有本设备的 profile/编码参数/目标 RTSP 地址 |
 | **SOAP 层** | 解析 SOAP Envelope(方法名、WSSE 头、参数),路由到 handler,渲染 XML 响应模板;统一 Fault 生成 |
 | **WS-Discovery** | 单个 UDP 监听器代答所有虚拟设备;实现 Hello/Bye/Probe→ProbeMatches |
 | **RTSP TCP Proxy** | `io.Copy` 双向透传到真实摄像头的 RTSP 端口;RTSP 认证端到端(客户端凭证直达真实摄像头) |
-| **Web Server** | REST API + 内嵌 UI;RTSP 原生探测(OPTIONS/DESCRIBE + Digest 认证);调用 ffmpeg 提供快照与 MJPEG 预览;ONVIF 自检 |
+| **Web Server** | REST API + 内嵌 UI;RTSP 原生探测(OPTIONS/DESCRIBE + Digest 认证);调用 ffmpeg 提供快照与 MJPEG 预览;ONVIF 自检;内嵌 `/mcp` 端点,暴露 12 个 MCP 工具(设备增删改查、RTSP 探测、快照、ONVIF 自检等),详见 docs/07-mcp.md |
 
 ## 3. 关键数据流
 
@@ -83,6 +84,16 @@ UI 保存 ──PUT /api/config──▶ 校验(YAML 语法 + 端口冲突 + 字
                   └─ 停旧 Virtual Devices → 起新 Virtual Devices → WS-Discovery 更新设备表(Bye/Hello)
 ```
 
+### 3.4 MCP 工具调用
+
+```
+AI 客户端(如 Claude Code)──POST /mcp(JSON-RPC)──▶ go-sdk(Streamable HTTP,无状态)
+  └─ 路由到 12 个工具之一(list_devices/add_device/probe_rtsp/take_snapshot/run_onvif_selftest 等)
+       └─ 复用 REST API 同款后端逻辑(Backend/Config Store)──▶ 结果(text/image 块)──▶ AI 客户端
+```
+
+详细工具清单、认证与错误语义见 docs/07-mcp.md。
+
 ## 4. 目录结构(规划)
 
 ```
@@ -90,6 +101,8 @@ onvif-proxy/
 ├── cmd/onvif-proxy/main.go        # 入口:参数解析、组装、信号处理
 ├── internal/
 │   ├── config/                    # YAML 模型、加载/校验/原子写、默认值生成(UUID/MAC)
+│   │   ├── env.go                 # ApplyEnvOverrides:ONVIF_* 环境变量运行时覆盖(仅内存生效,见 docs/03 §3)
+│   │   └── env_test.go
 │   ├── soap/                      # Envelope 解析、WSSE 验证、Fault/响应渲染
 │   ├── onvif/
 │   │   ├── device.go              # Device Service handlers
@@ -102,6 +115,10 @@ onvif-proxy/
 │   ├── mediautil/                 # ffmpeg 快照 / MJPEG 预览封装
 │   └── web/
 │       ├── web.go / devices.go …  # REST API
+│       ├── mcp.go                 # /mcp 端点:注册 12 个 MCP 工具,复用 REST 后端逻辑(见 docs/07-mcp.md)
+│       ├── mcp_test.go
+│       ├── onvif_selftest.go      # ONVIF 自检:对本机虚拟设备逐方法调用并比对基准表
+│       ├── test.go                # RTSP 探测/连通性测试等 /api/test/* 接口
 │       ├── ui/                     # Preact+TSX 源码(package.json / tsconfig / src),esbuild 构建
 │       └── static/                # go:embed 目标:index.html 薄壳 + dist/(提交的构建产物)
 ├── docs/                          # 本设计文档

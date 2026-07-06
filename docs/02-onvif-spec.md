@@ -38,7 +38,7 @@
 | 方法未实现(可选方法) | `env:Receiver` / `ter:ActionNotSupported` | 500(SOAP 1.2 规定 Receiver→500;**报文体是规范的 Fault XML**,客户端可正确降级) |
 | 请求格式非法 / 参数缺失 | `env:Sender` / `ter:InvalidArgVal` | 400 |
 | 未认证 / 认证失败 | `env:Sender` / `ter:NotAuthorized` | 400 |
-| 未知 Profile token | `env:Sender` / `ter:InvalidArgVal` / `ter:NoProfile` | 400 |
+| 未知 Profile token | `env:Sender` / `ter:InvalidArgVal` | 400 |
 
 Fault 报文结构(SOAP 1.2 §5.4):`Code/Subcode/Reason/Detail` 齐全,`Reason` 带 `xml:lang="en"`。
 
@@ -46,7 +46,7 @@ Fault 报文结构(SOAP 1.2 §5.4):`Code/Subcode/Reason/Detail` 齐全,`Reason` 
 
 - 实现 OASIS UsernameToken Profile 的 **PasswordDigest** 校验:
   `Digest = Base64( SHA-1( Base64Decode(Nonce) + Created + Password ) )`
-- `Created` 时间偏差容忍 ±5 分钟(可配),防重放的 nonce 缓存暂不做(局域网场景,权衡复杂度)。
+- `Created` 时间偏差容忍 ±5 分钟(编译期硬编码常量,当前不支持配置修改),防重放的 nonce 缓存暂不做(局域网场景,权衡复杂度)。
 - **`GetSystemDateAndTime` 永远免认证**(Core Spec 明确要求:客户端靠它校时后才能算出合法 Digest)。
 - 每设备可配置 `auth.username/password`;不配置则**全放行**(接受任意/缺失 WSSE 头)—— 与上游行为一致,便于内网使用。
 - PasswordText 模式一并接受(部分客户端只发明文)。
@@ -103,6 +103,7 @@ Fault 报文结构(SOAP 1.2 §5.4):`Code/Subcode/Reason/Detail` 齐全,`Reason` 
 
 | 方法 | 实现 | 说明 |
 |------|:---:|------|
+| GetServiceCapabilities | ✅ | `SnapshotUri`/`StreamingCapabilities(RTP_TCP, RTP_RTSP_TCP)`/`ProfileCapabilities(MaximumNumberOfProfiles=流数量)` |
 | GetProfiles / GetProfile | ✅ | 每条配置流一个 Profile(N 个);含 VSC + VEC 完整节点 |
 | CreateProfile / DeleteProfile | ✗ | ActionNotSupported(Profile 固定) |
 | GetVideoSources | ✅ | 分辨率/帧率取主流(streams[0])配置 |
@@ -112,8 +113,9 @@ Fault 报文结构(SOAP 1.2 §5.4):`Code/Subcode/Reason/Detail` 齐全,`Reason` 
 | SetVideoEncoderConfiguration | ◽ | 接受并忽略(返回空成功;客户端收编流程常会调用) |
 | GetStreamUri | ✅ | `rtsp://<ip>:<该流代理端口>/<原始path>`;按 ProfileToken 找到对应流 |
 | GetSnapshotUri | ✅ | `http://<ip>:<soapPort>/onvif/snapshot?token=<profile>`;后端两种模式:真实摄像头快照 URL 透传,或 ffmpeg 抓帧(带 TTL 缓存),见 03 文档 `snapshot` 节 |
+| GetGuaranteedNumberOfVideoEncoderInstances | ✅ | `TotalNumber`/`H264` 均等于配置的流数量 |
 | GetAudioSources / GetAudioEncoderConfigurations 等音频类 | ◽ | 空列表(合法响应,声明无音频) |
-| GetCompatibleVideoEncoderConfigurations 等 Compatible 类 | ✅ | 返回对应固定配置 |
+| GetCompatibleVideoSourceConfigurations / GetCompatibleVideoEncoderConfigurations 等 Compatible 类 | ✅ | 与对应 Get~Configuration(s) 共用渲染函数,返回同一固定配置 |
 | GetOSDs | ◽ | 空列表 |
 | 其余未列方法 | ✗ | ActionNotSupported |
 
